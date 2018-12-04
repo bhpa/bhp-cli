@@ -14,6 +14,8 @@ Centos:
 sudo yum install leveldb-devel sqlite-devel
 ```
 
+On Windows, use the [Bhp version of LevelDB](https://github.com/BhpAlpha/bhp-leveldb).
+
 ## Run BHP-CLI on Linux
 It is recommended to install tmux on Linux.
 tmux is a terminal multiplexer. It lets you switch easily between several programs in one terminal, 
@@ -38,7 +40,6 @@ tmux a -t [Custom number]
 tmux a -t 1
 ``` 
 
-On Windows, use the [Bhp version of LevelDB](https://github.com/BhpAlpha/bhp-leveldb).
 
 ## Download release binaries
 
