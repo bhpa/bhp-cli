@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Copyright>2018 The Bhp Project</Copyright>
+    <AssemblyTitle>Bhp.CLI</AssemblyTitle>
+    <Version>1.0.2</Version>
+    <Authors>The Bhp Project</Authors>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <AssemblyName>bhp-cli</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <PackageId>Bhp.CLI</PackageId>
+    <RootNamespace>Bhp</RootNamespace>
+    <Company>The Bhp Project</Company>
+    <Product>Bhp.CLI</Product>
+    <Description>Bhp.CLI</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>False</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bhp\bhp\bhp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="config.json;config.mainnet.json;config.testnet.json;protocol.json;protocol.mainnet.json;protocol.testnet.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <ProjectExtensions><VisualStudio><UserProperties config_1json__JSONSchema="" /></VisualStudio></ProjectExtensions>
+ 
+
+</Project>

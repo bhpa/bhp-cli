@@ -1,0 +1,36 @@
+﻿#忽略所有文
+*
+# 不忽略目
+!*/
+# 不忽略gitignore
+!.gitignore
+!*.sln
+!*.cs
+!*.csproj
+!*.resx
+!*.json
+!*.config
+!*.settings
+!*.ico
+!*.png
+!*.bat
+!*.vstemplate
+!/smartcontractapp/*/Bhp.ConvertTask.dll
+!*.tasks
+!*.vsixmanifest
+
+!*.cpp
+!*.h
+!*.hpp
+
+!*.vcxproj
+!*.filters
+
+!*.md
+
+bin/
+/bin
+obj/
+/obj
+packages/
+/packages

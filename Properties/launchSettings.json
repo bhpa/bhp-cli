@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "bhp-cli": {
+      "commandName": "Project",
+      "commandLineArgs": "--rpc"
+    }
+  }
+}

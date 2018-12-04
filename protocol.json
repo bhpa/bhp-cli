@@ -1,0 +1,30 @@
+﻿{
+  "ProtocolConfiguration": {
+    "Magic": 58876898,
+    "AddressVersion": 23,
+    "SecondsPerBlock": 15,
+    "LowPriorityThreshold": 0.0001,
+    "StandbyValidators": [
+      "02157613cd65a61f58ebebc04bc6a11ae4f2de511daf7dccd7ee40edf01991a58f",
+      "021136458df8961500f044a09005eb6aa9cd8356959f2335e8c6738a3d642353a0",
+      "02e35ce0f41194200b2fb3a3f7c382d5e612933fad436b41202b9e741ae3eb4624",
+      "0354d24daa4eaa187a4ad55789936e5a1f3a28977f0a71d114ce274dd161ceec74"
+    ],
+    "SeedList": [
+      "seed01.bhpa.io:20555",
+      "seed02.bhpa.io:20555",
+      "seed03.bhpa.io:20555",
+      "seed04.bhpa.io:20555",
+      "seed05.bhpa.io:20555",
+      "seed06.bhpa.io:20555",
+      "seed07.bhpa.io:20555",
+      "seed08.bhpa.io:20555"
+    ],
+    "SystemFee": {
+      "EnrollmentTransaction": 1000,
+      "IssueTransaction": 500,
+      "PublishTransaction": 500,
+      "RegisterTransaction": 10000
+    }
+  }
+}
