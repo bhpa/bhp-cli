@@ -24,14 +24,14 @@ ubuntu: sudo apt-get install tmux
 centos: sudo yum install tmux
 ```
 
-###Create a session
+### Create a session
 
 tmux new -s [Custom number]
 ```sh
 tmux new -s 1
 ```
 
-###Enter the last session
+### Enter the last session
 
 tmux a -t [Custom number]
 ```sh
