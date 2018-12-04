@@ -7,8 +7,11 @@ Install [.NET Core](https://www.microsoft.com/net/download/core).
 On Linux, install the LevelDB and SQLite3 dev packages. E.g. on Ubuntu:
 
 ```sh
+Ubuntu:
 sudo apt-get install libleveldb-dev sqlite3 libsqlite3-dev libunwind8-dev
 
+Centos:
+sudo yum install leveldb-devel sqlite-devel
 ```
 
 ## Run BHP-CLI on Linux
