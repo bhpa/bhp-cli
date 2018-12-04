@@ -11,6 +11,30 @@ sudo apt-get install libleveldb-dev sqlite3 libsqlite3-dev libunwind8-dev
 
 ```
 
+## Run BHP-CLI on Linux
+It is recommended to install tmux on Linux.
+tmux is a terminal multiplexer. It lets you switch easily between several programs in one terminal, 
+detach them (they keep running in the background) and reattach them to a different terminal. And do a lot more 
+
+```sh
+ubuntu: sudo apt-get install tmux
+centos: sudo yum install tmux
+```
+
+###Create a session
+
+tmux new -s [Custom number]
+```sh
+tmux new -s 1
+```
+
+###Enter the last session
+
+tmux a -t [Custom number]
+```sh
+tmux a -t 1
+``` 
+
 On Windows, use the [Bhp version of LevelDB](https://github.com/BhpAlpha/bhp-leveldb).
 
 ## Download release binaries
