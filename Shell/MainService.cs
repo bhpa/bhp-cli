@@ -1,4 +1,5 @@
 ﻿using Akka.Actor;
+using Bhp.BhpExtensions;
 using Bhp.Consensus;
 using Bhp.IO;
 using Bhp.Ledger;
@@ -15,9 +16,12 @@ using Bhp.Wallets.SQLite;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
+using System.Reflection;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using ECCurve = Bhp.Cryptography.ECC.ECCurve;
 using ECPoint = Bhp.Cryptography.ECC.ECPoint;
@@ -33,7 +37,7 @@ namespace Bhp.Shell
         private WalletIndexer indexer;
 
         protected override string Prompt => "bhp";
-        public override string ServiceName => "bhp-cli";
+        public override string ServiceName => $"BHP-CLI V{Assembly.GetEntryAssembly().GetName().Version.ToString()}";
 
         private WalletIndexer GetIndexer()
         {
@@ -60,14 +64,16 @@ namespace Bhp.Shell
                     return OnRelayCommand(args);
                 case "sign":
                     return OnSignCommand(args);
-                case "create":
-                    return OnCreateCommand(args);
                 case "change":
                     return OnChangeCommand(args);
+                case "create":
+                    return OnCreateCommand(args);
                 case "export":
                     return OnExportCommand(args);
                 case "help":
                     return OnHelpCommand(args);
+                case "plugins":
+                    return OnPluginsCommand(args);
                 case "import":
                     return OnImportCommand(args);
                 case "list":
@@ -86,6 +92,10 @@ namespace Bhp.Shell
                     return OnStartCommand(args);
                 case "upgrade":
                     return OnUpgradeCommand(args);
+                case "install":
+                    return OnInstallCommand(args);
+                case "uninstall":
+                    return OnUnInstallCommand(args);
                 default:
                     return base.OnCommand(args);
             }
@@ -200,19 +210,6 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnCreateCommand(string[] args)
-        {
-            switch (args[1].ToLower())
-            {
-                case "address":
-                    return OnCreateAddressCommand(args);
-                case "wallet":
-                    return OnCreateWalletCommand(args);
-                default:
-                    return base.OnCommand(args);
-            }
-        }
-
         private bool OnChangeCommand(string[] args)
         {
             switch (args[1].ToLower())
@@ -230,6 +227,19 @@ namespace Bhp.Shell
             if (!byte.TryParse(args[2], out byte viewnumber)) return false;
             system.Consensus?.Tell(new ConsensusService.SetViewNumber { ViewNumber = viewnumber });
             return true;
+        }
+
+        private bool OnCreateCommand(string[] args)
+        {
+            switch (args[1].ToLower())
+            {
+                case "address":
+                    return OnCreateAddressCommand(args);
+                case "wallet":
+                    return OnCreateWalletCommand(args);
+                default:
+                    return base.OnCommand(args);
+            }
         }
 
         private bool OnCreateAddressCommand(string[] args)
@@ -300,6 +310,7 @@ namespace Bhp.Shell
                         WalletAccount account = Program.Wallet.CreateAccount();
                         Console.WriteLine($"address: {account.Address}");
                         Console.WriteLine($" pubkey: {account.GetKey().PublicKey.EncodePoint(true).ToHexString()}");
+                        system.RpcServer?.OpenWallet(Program.Wallet);
                     }
                     break;
                 case ".json":
@@ -311,6 +322,7 @@ namespace Bhp.Shell
                         Program.Wallet = wallet;
                         Console.WriteLine($"address: {account.Address}");
                         Console.WriteLine($" pubkey: {account.GetKey().PublicKey.EncodePoint(true).ToHexString()}");
+                        system.RpcServer?.OpenWallet(Program.Wallet);
                     }
                     break;
                 default:
@@ -386,7 +398,7 @@ namespace Bhp.Shell
             Console.Write(
                 "Normal Commands:\n" +
                 "\tversion\n" +
-                "\thelp\n" +
+                "\thelp [plugin-name]\n" +
                 "\tclear\n" +
                 "\texit\n" +
                 "Wallet Commands:\n" +
@@ -399,7 +411,7 @@ namespace Bhp.Shell
                 "\tlist key\n" +
                 "\tshow utxo [id|alias]\n" +
                 "\tshow gas\n" +
-                "\tclaim gas [all]\n" +
+                "\tclaim gas [all] [changeAddress]\n" +
                 "\tcreate address [n=1]\n" +
                 "\timport key <wif|path>\n" +
                 "\texport key [address] [path]\n" +
@@ -410,8 +422,27 @@ namespace Bhp.Shell
                 "\tshow state\n" +
                 "\tshow pool [verbose]\n" +
                 "\trelay <jsonObjectToSign>\n" +
+                "Plugin Commands:\n" +
+                "\tplugins\n" +
+                "\tinstall <pluginName>\n" +
+                "\tuninstall <pluginName>\n" +
                 "Advanced Commands:\n" +
                 "\tstart consensus\n");
+
+            return true;
+        }
+
+        private bool OnPluginsCommand(string[] args)
+        {
+            if (Plugin.Plugins.Count > 0)
+            {
+                Console.WriteLine("Loaded plugins:");
+                Plugin.Plugins.ForEach(p => Console.WriteLine("\t" + p.Name));
+            }
+            else
+            {
+                Console.WriteLine("No loaded plugins");
+            }
             return true;
         }
 
@@ -447,7 +478,7 @@ namespace Bhp.Shell
                 return true;
             }
 
-            ECPoint[] publicKeys = args.Skip(3).Select(p => ECPoint.Parse(p, ECCurve.Secp256r1)).ToArray();
+            ECPoint[] publicKeys = args.Skip(3).Select(p => ECPoint.Parse(p, ECCurve.Secp256)).ToArray();
 
             Contract multiSignContract = Contract.CreateMultiSigContract(m, publicKeys);
             KeyPair keyPair = Program.Wallet.GetAccounts().FirstOrDefault(p => p.HasKey && publicKeys.Contains(p.GetKey().PublicKey))?.GetKey();
@@ -519,43 +550,39 @@ namespace Bhp.Shell
 
         private bool OnClaimCommand(string[] args)
         {
+            if (args.Length < 2 || args.Length > 4 || !args[1].Equals("gas", StringComparison.OrdinalIgnoreCase))
+                return base.OnCommand(args);
+
             if (NoWallet()) return true;
 
-            Coins coins = new Coins(Program.Wallet, system);
+            bool all = args.Length > 2 && args[2].Equals("all", StringComparison.OrdinalIgnoreCase);
+            bool useChangeAddress = (all && args.Length == 4) || (!all && args.Length == 3);
+            UInt160 changeAddress = useChangeAddress ? args[args.Length - 1].ToScriptHash() : null;
 
-            switch (args[1].ToLower())
+            if (useChangeAddress)
             {
-                case "gas":
-                    if (args.Length > 2)
-                    {
-                        switch (args[2].ToLower())
-                        {
-                            case "all":
-                                ClaimTransaction[] txs = coins.ClaimAll();
-                                if (txs.Length > 0)
-                                {
-                                    foreach (ClaimTransaction tx in txs)
-                                    {
-                                        Console.WriteLine($"Tranaction Suceeded: {tx.Hash}");
-                                    }
-                                }
-                                return true;
-                            default:
-                                return base.OnCommand(args);
-                        }
-                    }
-                    else
-                    {
-                        ClaimTransaction tx = coins.Claim();
-                        if (tx != null)
-                        {
-                            Console.WriteLine($"Tranaction Suceeded: {tx.Hash}");
-                        }
-                        return true;
-                    }
-                default:
-                    return base.OnCommand(args);
+                string password = ReadPassword("password");
+                if (password.Length == 0)
+                {
+                    Console.WriteLine("cancelled");
+                    return true;
+                }
+                if (!Program.Wallet.VerifyPassword(password))
+                {
+                    Console.WriteLine("Incorrect password");
+                    return true;
+                }
             }
+
+            Coins coins = new Coins(Program.Wallet, system);
+            ClaimTransaction[] txs = all
+                ? coins.ClaimAll(changeAddress)
+                : new[] { coins.Claim(changeAddress) };
+            if (txs is null) return true;
+            foreach (ClaimTransaction tx in txs)
+                if (tx != null)
+                    Console.WriteLine($"Transaction Succeeded: {tx.Hash}");
+            return true;
         }
 
         private bool OnShowGasCommand(string[] args)
@@ -643,14 +670,12 @@ namespace Bhp.Shell
             try
             {
                 Program.Wallet = OpenWallet(GetIndexer(), path, password);
-                system.OpenWallet(Program.Wallet, Settings.Default.UnlockWallet.AutoLock,Settings.Default.RPC.GetUtxoUrl);
-                system.SetWalletConfig(Settings.Default.UnlockWallet.Path, 
-                    Settings.Default.Paths.Index, GetIndexer(), Settings.Default.UnlockWallet.AutoLock);
             }
             catch (CryptographicException)
             {
                 Console.WriteLine($"failed to open file \"{path}\"");
             }
+            system.RpcServer?.OpenWallet(Program.Wallet);
             return true;
         }
 
@@ -793,19 +818,6 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnShowStateCommand(string[] args)
-        {
-            uint wh = 0;
-            if (Program.Wallet != null)
-                wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
-            Console.WriteLine("------------------------------RemoteNode List------------------------------");
-            Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
-            foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
-            Console.WriteLine("---------------------------------------------------------------------------");
-            return true;
-        }
-
         /*
         private bool OnShowStateCommand(string[] args)
         {
@@ -829,6 +841,19 @@ namespace Bhp.Shell
             return true;
         }
         */
+
+        private bool OnShowStateCommand(string[] args)
+        {
+            uint wh = 0;
+            if (Program.Wallet != null)
+                wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
+            Console.WriteLine("------------------------------RemoteNode List------------------------------");
+            Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
+            foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
+                Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
+            Console.WriteLine("---------------------------------------------------------------------------");
+            return true;
+        }
 
         private bool OnShowUtxoCommand(string[] args)
         {
@@ -891,25 +916,21 @@ namespace Bhp.Shell
                     OnStartConsensusCommand(null);
                 }
             }
+
+            //By BHP
+            ExtensionSettings.Default.DataRPCServer.Host = Settings.Default.DataRPC.Host;
+            ExtensionSettings.Default.WalletConfig.Index = Settings.Default.Paths.Index;
+            ExtensionSettings.Default.WalletConfig.Path = Settings.Default.UnlockWallet.Path;
+            ExtensionSettings.Default.WalletConfig.AutoLock = Settings.Default.UnlockWallet.AutoLock;
+            ExtensionSettings.Default.WalletConfig.Indexer = GetIndexer();
+
             if (useRPC)
             {
-                /*
                 system.StartRpc(Settings.Default.RPC.BindAddress,
                     Settings.Default.RPC.Port,
                     wallet: Program.Wallet,
                     sslCert: Settings.Default.RPC.SslCert,
                     password: Settings.Default.RPC.SslCertPassword);
-                */
-                system.StartRpc(Settings.Default.RPC.BindAddress,//IPAddress.Any,
-                    Settings.Default.RPC.Port,
-                    wallet: Program.Wallet,
-                    isAutoLock: Settings.Default.UnlockWallet.AutoLock,
-                    sslCert: Settings.Default.RPC.SslCert,
-                    password: Settings.Default.RPC.SslCertPassword,
-                    getutxourl: Settings.Default.RPC.GetUtxoUrl);
-
-                system.SetWalletConfig(Settings.Default.UnlockWallet.Path, Settings.Default.Paths.Index, 
-                    GetIndexer(), Settings.Default.UnlockWallet.AutoLock);
             }
         }
 
@@ -947,6 +968,53 @@ namespace Bhp.Shell
                 default:
                     return base.OnCommand(args);
             }
+        }
+
+        private bool OnInstallCommand(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("error");
+                return true;
+            }
+            var pluginName = args[1];
+            var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
+            var fileName = Path.Combine("Plugins", $"{pluginName}.zip");
+            Directory.CreateDirectory("Plugins");
+            Console.WriteLine($"Downloading from {address}");
+            using (WebClient wc = new WebClient())
+            {
+                wc.DownloadFile(address, fileName);
+            }
+            try
+            {
+                ZipFile.ExtractToDirectory(fileName, ".");
+            }
+            catch (IOException)
+            {
+                Console.WriteLine($"Plugin already exist.");
+                return true;
+            }
+            finally
+            {
+                File.Delete(fileName);
+            }
+            Console.WriteLine($"Install successful, please restart bhp-cli.");
+            return true;
+        }
+
+        private bool OnUnInstallCommand(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("error");
+                return true;
+            }
+            var pluginName = args[1];
+            Directory.Delete(Path.Combine("Plugins", pluginName), true);
+            File.Delete(Path.Combine("Plugins", $"{pluginName}.dll"));
+            Console.WriteLine($"Uninstall successful, please restart bhp-cli.");
+            return true;
         }
 
         private bool OnUpgradeWalletCommand(string[] args)
@@ -987,9 +1055,9 @@ namespace Bhp.Shell
             }
             else
             {
-                BRC6Wallet nep6wallet = new BRC6Wallet(indexer, path);
-                nep6wallet.Unlock(password);
-                return nep6wallet;
+                BRC6Wallet brc6wallet = new BRC6Wallet(indexer, path);
+                brc6wallet.Unlock(password);
+                return brc6wallet;
             }
         }
     }

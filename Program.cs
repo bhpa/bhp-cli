@@ -22,7 +22,7 @@ namespace Bhp
                     w.WriteLine(e.ExceptionObject.GetType());
                     w.WriteLine(e.ExceptionObject);
                 }
-        }  
+        }
 
         static void Main(string[] args)
         {

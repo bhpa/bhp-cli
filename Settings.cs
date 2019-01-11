@@ -1,6 +1,6 @@
-﻿using System.Net;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Bhp.Network.P2P;
+using System.Net;
 
 namespace Bhp
 {
@@ -9,7 +9,9 @@ namespace Bhp
         public PathsSettings Paths { get; }
         public P2PSettings P2P { get; }
         public RPCSettings RPC { get; }
-        public UnlockWalletSettings UnlockWallet { get; set; }
+        public UnlockWalletSettings UnlockWallet { get; }
+        public string PluginURL { get; }
+        public DataRPCSettings DataRPC { get; set; }
 
         public static Settings Default { get; }
 
@@ -25,6 +27,8 @@ namespace Bhp
             this.P2P = new P2PSettings(section.GetSection("P2P"));
             this.RPC = new RPCSettings(section.GetSection("RPC"));
             this.UnlockWallet = new UnlockWalletSettings(section.GetSection("UnlockWallet"));
+            this.PluginURL = section.GetSection("PluginURL").Value;
+            DataRPC = new DataRPCSettings(section.GetSection("DataRPC"));
         }
     }
 
@@ -58,7 +62,6 @@ namespace Bhp
         public ushort Port { get; }
         public string SslCert { get; }
         public string SslCertPassword { get; }
-        public string GetUtxoUrl { get; }
 
         public RPCSettings(IConfigurationSection section)
         {
@@ -66,7 +69,6 @@ namespace Bhp
             this.Port = ushort.Parse(section.GetSection("Port").Value);
             this.SslCert = section.GetSection("SslCert").Value;
             this.SslCertPassword = section.GetSection("SslCertPassword").Value;
-            this.GetUtxoUrl = section.GetSection("GetUtxoUrl").Value;
         }
     }
 
@@ -87,6 +89,19 @@ namespace Bhp
                 this.StartConsensus = bool.Parse(section.GetSection("StartConsensus").Value);
                 this.IsActive = bool.Parse(section.GetSection("IsActive").Value);
                 this.AutoLock = bool.Parse(section.GetSection("AutoLock").Value);
+            }
+        }
+    }
+
+    internal class DataRPCSettings
+    {
+        public string Host { get; }
+
+        public DataRPCSettings(IConfigurationSection section)
+        {
+            if (section != null)
+            {
+                Host = section.GetSection("Host").Value;
             }
         }
     }
