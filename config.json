@@ -23,7 +23,7 @@
     },
     "PluginURL": "",
     "DataRPC": {
-      "Host": "https://exp.bhpa.io/"
+      "Host": "http://exp.bhpa.io:7070"
     }
   }
 }
