@@ -338,9 +338,90 @@ namespace Bhp.Shell
             {
                 case "key":
                     return OnExportKeyCommand(args);
+                case "block":
+                case "blocks":
+                    return OnExportBlocksCommand(args);
                 default:
                     return base.OnCommand(args);
             }
+        }
+
+        private bool OnExportBlocksCommand(string[] args)
+        {
+            if (args.Length > 4)
+            {
+                Console.WriteLine("error");
+                return true;
+            }
+            if (args.Length >= 3 && uint.TryParse(args[2], out uint start))
+            {
+                if (start > Blockchain.Singleton.Height)
+                    return true;
+                uint count = args.Length >= 4 ? uint.Parse(args[3]) : uint.MaxValue;
+                count = Math.Min(count, Blockchain.Singleton.Height - start + 1);
+                uint end = start + count - 1;
+                string path = $"chain.{start}.acc";
+                using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    if (fs.Length > 0)
+                    {
+                        fs.Seek(sizeof(uint), SeekOrigin.Begin);
+                        byte[] buffer = new byte[sizeof(uint)];
+                        fs.Read(buffer, 0, buffer.Length);
+                        start += BitConverter.ToUInt32(buffer, 0);
+                        fs.Seek(sizeof(uint), SeekOrigin.Begin);
+                    }
+                    else
+                    {
+                        fs.Write(BitConverter.GetBytes(start), 0, sizeof(uint));
+                    }
+                    if (start <= end)
+                        fs.Write(BitConverter.GetBytes(count), 0, sizeof(uint));
+                    fs.Seek(0, SeekOrigin.End);
+                    for (uint i = start; i <= end; i++)
+                    {
+                        UInt256 blockhash = Blockchain.Singleton.GetBlockHash((uint)i);
+                        Block block = Blockchain.Singleton.GetBlock(blockhash);
+                        byte[] array = block.ToArray();
+                        fs.Write(BitConverter.GetBytes(array.Length), 0, sizeof(int));
+                        fs.Write(array, 0, array.Length);
+                        Console.SetCursorPosition(0, Console.CursorTop);
+                        Console.Write($"[{i}/{end}]");
+                    }
+                }
+            }
+            else
+            {
+                start = 0;
+                uint end = Blockchain.Singleton.Height;
+                uint count = end - start + 1;
+                string path = args.Length >= 3 ? args[2] : "chain.acc";
+                using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    if (fs.Length > 0)
+                    {
+                        byte[] buffer = new byte[sizeof(uint)];
+                        fs.Read(buffer, 0, buffer.Length);
+                        start = BitConverter.ToUInt32(buffer, 0);
+                        fs.Seek(0, SeekOrigin.Begin);
+                    }
+                    if (start <= end)
+                        fs.Write(BitConverter.GetBytes(count), 0, sizeof(uint));
+                    fs.Seek(0, SeekOrigin.End);
+                    for (uint i = start; i <= end; i++)
+                    {
+                        UInt256 blockhash = Blockchain.Singleton.GetBlockHash((uint)i);
+                        Block block = Blockchain.Singleton.GetBlock(blockhash);
+                        byte[] array = block.ToArray();
+                        fs.Write(BitConverter.GetBytes(array.Length), 0, sizeof(int));
+                        fs.Write(array, 0, array.Length);
+                        Console.SetCursorPosition(0, Console.CursorTop);
+                        Console.Write($"[{i}/{end}]");
+                    }
+                }
+            }
+            Console.WriteLine();
+            return true;
         }
 
         private bool OnExportKeyCommand(string[] args)
@@ -810,7 +891,7 @@ namespace Bhp.Shell
         private bool OnShowPoolCommand(string[] args)
         {
             bool verbose = args.Length >= 3 && args[2] == "verbose";
-            Transaction[] transactions = Blockchain.Singleton.GetMemoryPool().ToArray();
+            Transaction[] transactions = Blockchain.Singleton.MemPool.ToArray();
             if (verbose)
                 foreach (Transaction tx in transactions)
                     Console.WriteLine($"{tx.Hash} {tx.GetType().Name}");
