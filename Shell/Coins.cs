@@ -170,6 +170,13 @@ namespace Bhp.Shell
             if (context.Completed)
             {
                 context.Verifiable.Witnesses = context.GetWitnesses();
+
+                if (tx.Size > Transaction.MaxTransactionSize)
+                {
+                    Console.WriteLine("The transaction is too big, please reduce the amount of transfer!");
+                    return null;
+                }
+
                 current_wallet.ApplyTransaction(tx);
 
                 bool relay_result = system.Blockchain.Ask<RelayResultReason>(tx).Result == RelayResultReason.Succeed;

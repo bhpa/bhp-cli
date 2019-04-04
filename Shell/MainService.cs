@@ -859,6 +859,13 @@ namespace Bhp.Shell
             if (context.Completed)
             {
                 tx.Witnesses = context.GetWitnesses();
+
+                if (tx.Size > Transaction.MaxTransactionSize)
+                {
+                    Console.WriteLine("The transaction is too big, please reduce the amount of transfer!");
+                    return true;
+                }
+
                 Program.Wallet.ApplyTransaction(tx);
                 system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
                 Console.WriteLine($"TXID: {tx.Hash}");

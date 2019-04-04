@@ -11,10 +11,10 @@
       "037801dc2903baa4163b44302f33f43e0e12999782144c871060e23a478eeaa484"
     ],
     "SeedList": [
-      "tseed1.bhpa.io:20555",
-      "tseed2.bhpa.io:20555",
-      "tseed3.bhpa.io:20555",
-      "tseed4.bhpa.io:20555"
+      "47.103.46.191:10555",
+      "47.103.46.191:20555",
+      "47.103.46.213:10555",
+      "47.103.46.213:20555"
     ],
     "SystemFee": {
       "EnrollmentTransaction": 1000,
