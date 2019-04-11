@@ -862,7 +862,7 @@ namespace Bhp.Shell
 
                 if (tx.Size > Transaction.MaxTransactionSize)
                 {
-                    Console.WriteLine("The transaction is too big, please reduce the amount of transfer!");
+                    Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
                     return true;
                 }
 
