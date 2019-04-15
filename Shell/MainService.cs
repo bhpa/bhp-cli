@@ -2,6 +2,7 @@
 using Bhp.BhpExtensions;
 using Bhp.Consensus;
 using Bhp.IO;
+using Bhp.IO.Json;
 using Bhp.Ledger;
 using Bhp.Network.P2P;
 using Bhp.Network.P2P.Payloads;
@@ -10,6 +11,7 @@ using Bhp.Persistence.LevelDB;
 using Bhp.Plugins;
 using Bhp.Services;
 using Bhp.SmartContract;
+using Bhp.VM;
 using Bhp.Wallets;
 using Bhp.Wallets.BRC6;
 using Bhp.Wallets.SQLite;
@@ -21,6 +23,7 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ECCurve = Bhp.Cryptography.ECC.ECCurve;
@@ -94,6 +97,10 @@ namespace Bhp.Shell
                     return OnStartCommand(args);
                 case "upgrade":
                     return OnUpgradeCommand(args);
+                case "deploy":
+                    return OnDeployCommand(args);
+                case "invoke":
+                    return OnInvokeCommand(args);
                 case "install":
                     return OnInstallCommand(args);
                 case "uninstall":
@@ -502,6 +509,9 @@ namespace Bhp.Shell
                 "\timport multisigaddress m pubkeys...\n" +
                 "\tsend <id|alias> <address> <value>|all [fee=0]\n" +
                 "\tsign <jsonObjectToSign>\n" +
+                 "Contract Commands:\n" +
+                "\tdeploy <avmFilePath> <paramTypes> <returnTypeHexString> <hasStorage (true|false)> <hasDynamicInvoke (true|false)> <isPayable (true|false) <contractName> <contractVersion> <contractAuthor> <contractEmail> <contractDescription>\n" +
+                "\tinvoke <scripthash> <command> [optionally quoted params separated by space]\n" +
                 "Node Commands:\n" +
                 "\tshow state\n" +
                 "\tshow pool [verbose]\n" +
@@ -1098,6 +1108,190 @@ namespace Bhp.Shell
                 default:
                     return base.OnCommand(args);
             }
+        }
+
+        private bool OnDeployCommand(string[] args)
+        {
+            if (NoWallet()) return true;
+            var tx = LoadScriptTransaction(
+                /* filePath */ args[1],
+                /* paramTypes */ args[2],
+                /* returnType */ args[3],
+                /* hasStorage */ args[4].ToBool(),
+                /* hasDynamicInvoke */ args[5].ToBool(),
+                /* isPayable */ args[6].ToBool(),
+                /* contractName */ args[7],
+                /* contractVersion */ args[8],
+                /* contractAuthor */ args[9],
+                /* contractEmail */ args[10],
+                /* contractDescription */ args[11],
+                /* scriptHash */ out var scriptHash);
+
+            tx.Version = 1;
+            if (tx.Attributes == null) tx.Attributes = new TransactionAttribute[0];
+            if (tx.Inputs == null) tx.Inputs = new CoinReference[0];
+            if (tx.Outputs == null) tx.Outputs = new TransactionOutput[0];
+            if (tx.Witnesses == null) tx.Witnesses = new Witness[0];
+            ApplicationEngine engine = ApplicationEngine.Run(tx.Script, tx, null, true);
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"Script hash: {scriptHash.ToString()}");
+            sb.AppendLine($"VM State: {engine.State}");
+            sb.AppendLine($"Gas Consumed: {engine.GasConsumed}");
+            sb.AppendLine(
+                $"Evaluation Stack: {new JArray(engine.ResultStack.Select(p => p.ToParameter().ToJson()))}");
+            Console.WriteLine(sb.ToString());
+            if (engine.State.HasFlag(VMState.FAULT))
+            {
+                Console.WriteLine("Engine faulted.");
+                return true;
+            }
+
+            tx.Gas = engine.GasConsumed - Fixed8.FromDecimal(10);
+            if (tx.Gas < Fixed8.Zero) tx.Gas = Fixed8.Zero;
+            tx.Gas = tx.Gas.Ceiling();
+
+            tx = DecorateInvocationTransaction(tx);
+
+            return SignAndSendTx(tx);
+        }
+
+        public InvocationTransaction LoadScriptTransaction(
+            string avmFilePath, string paramTypes, string returnTypeHexString,
+            bool hasStorage, bool hasDynamicInvoke, bool isPayable,
+            string contractName, string contractVersion, string contractAuthor,
+            string contractEmail, string contractDescription, out UInt160 scriptHash)
+        {
+            byte[] script = File.ReadAllBytes(avmFilePath);
+            // See ContractParameterType Enum
+            byte[] parameterList = paramTypes.HexToBytes();
+            ContractParameterType returnType = returnTypeHexString.HexToBytes()
+                .Select(p => (ContractParameterType?)p).FirstOrDefault() ?? ContractParameterType.Void;
+            ContractPropertyState properties = ContractPropertyState.NoProperty;
+            if (hasStorage) properties |= ContractPropertyState.HasStorage;
+            if (hasDynamicInvoke) properties |= ContractPropertyState.HasDynamicInvoke;
+            if (isPayable) properties |= ContractPropertyState.Payable;
+            using (ScriptBuilder sb = new ScriptBuilder())
+            {
+                scriptHash = script.ToScriptHash();
+
+                sb.EmitSysCall("Bhp.Contract.Create", script, parameterList, returnType, properties,
+                    contractName, contractVersion, contractAuthor, contractEmail, contractDescription);
+                return new InvocationTransaction
+                {
+                    Script = sb.ToArray()
+                };
+            }
+        }
+
+        public InvocationTransaction DecorateInvocationTransaction(InvocationTransaction tx)
+        {
+            Fixed8 fee = Fixed8.FromDecimal(0.001m);
+
+            if (tx.Size > 1024)
+            {
+                fee += Fixed8.FromDecimal(tx.Size * 0.00001m);
+            }
+
+            return Program.Wallet.MakeTransaction(new InvocationTransaction
+            {
+                Version = tx.Version,
+                Script = tx.Script,
+                Gas = tx.Gas,
+                Attributes = tx.Attributes,
+                Inputs = tx.Inputs,
+                Outputs = tx.Outputs
+            }, fee: fee);
+        }
+
+        public bool SignAndSendTx(InvocationTransaction tx)
+        {
+            ContractParametersContext context;
+            try
+            {
+                context = new ContractParametersContext(tx);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.WriteLine($"Error creating contract params: {ex}");
+                throw;
+            }
+            Program.Wallet.Sign(context);
+            string msg;
+            if (context.Completed)
+            {
+                tx.Witnesses = context.GetWitnesses();
+                Program.Wallet.ApplyTransaction(tx);
+
+                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+
+                msg = $"Signed and relayed transaction with hash={tx.Hash}";
+                Console.WriteLine(msg);
+                return true;
+            }
+
+            msg = $"Failed sending transaction with hash={tx.Hash}";
+            Console.WriteLine(msg);
+            return true;
+        }
+
+        private bool OnInvokeCommand(string[] args)
+        {
+            var scriptHash = UInt160.Parse(args[1]);
+
+            List<ContractParameter> contractParameters = new List<ContractParameter>();
+            for (int i = 3; i < args.Length; i++)
+            {
+                contractParameters.Add(new ContractParameter()
+                {
+                    // TODO: support contract params of type other than string.
+                    Type = ContractParameterType.String,
+                    Value = args[i]
+                });
+            }
+
+            ContractParameter[] parameters =
+            {
+                new ContractParameter
+                {
+                    Type = ContractParameterType.String,
+                    Value = args[2]
+                },
+                new ContractParameter
+                {
+                    Type = ContractParameterType.Array,
+                    Value = contractParameters.ToArray()
+                }
+            };
+
+            var tx = new InvocationTransaction();
+
+            using (ScriptBuilder scriptBuilder = new ScriptBuilder())
+            {
+                scriptBuilder.EmitAppCall(scriptHash, parameters);
+                Console.WriteLine($"Invoking script with: '{scriptBuilder.ToArray().ToHexString()}'");
+                tx.Script = scriptBuilder.ToArray();
+            }
+
+            if (tx.Attributes == null) tx.Attributes = new TransactionAttribute[0];
+            if (tx.Inputs == null) tx.Inputs = new CoinReference[0];
+            if (tx.Outputs == null) tx.Outputs = new TransactionOutput[0];
+            if (tx.Witnesses == null) tx.Witnesses = new Witness[0];
+            ApplicationEngine engine = ApplicationEngine.Run(tx.Script, tx);
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"VM State: {engine.State}");
+            sb.AppendLine($"Gas Consumed: {engine.GasConsumed}");
+            sb.AppendLine(
+                $"Evaluation Stack: {new JArray(engine.ResultStack.Select(p => p.ToParameter().ToJson()))}");
+            Console.WriteLine(sb.ToString());
+            if (engine.State.HasFlag(VMState.FAULT))
+            {
+                Console.WriteLine("Engine faulted.");
+                return true;
+            }
+
+            tx = DecorateInvocationTransaction(tx);
+            return SignAndSendTx(tx);
         }
 
         private bool OnInstallCommand(string[] args)
