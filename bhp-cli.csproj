@@ -32,6 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\bhp-vm\bhp-vm\bhp-vm.csproj" />
     <ProjectReference Include="..\bhp\bhp\bhp.csproj" />
   </ItemGroup>
 
