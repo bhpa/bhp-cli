@@ -82,6 +82,8 @@ namespace Bhp.Shell
                     return OnClaimCommand(args);
                 case "open":
                     return OnOpenCommand(args);
+                case "close":
+                    return OnCloseCommand(args);
                 case "rebuild":
                     return OnRebuildCommand(args);
                 case "send":
@@ -485,6 +487,7 @@ namespace Bhp.Shell
                 "Wallet Commands:\n" +
                 "\tcreate wallet <path>\n" +
                 "\topen wallet <path>\n" +
+                "\tclose wallet <path>\n" +
                 "\tupgrade wallet <path>\n" +
                 "\trebuild index\n" +
                 "\tlist address\n" +
@@ -757,6 +760,45 @@ namespace Bhp.Shell
                 Console.WriteLine($"failed to open file \"{path}\"");
             }
             system.RpcServer?.OpenWallet(Program.Wallet);
+            return true;
+        }
+
+        /// <summary>
+        /// process "close" command
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        private bool OnCloseCommand(string[] args)
+        {
+            switch (args[1].ToLower())
+            {
+                case "wallet":
+                    return OnCloseWalletCommand(args);
+                default:
+                    return base.OnCommand(args);
+            }
+        }
+
+        /// <summary>
+        /// process "close wallet" command
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        private bool OnCloseWalletCommand(string[] args)
+        {
+            if (Program.Wallet == null)
+            {
+                Console.WriteLine($"Wallet is not opened");
+                return true;
+            }
+
+            Program.Wallet.Dispose();
+            Program.Wallet = null;
+            if (system.RpcServer != null)
+            {
+                system.RpcServer.Wallet = null;
+            }
+            Console.WriteLine($"Wallet is closed");
             return true;
         }
 
