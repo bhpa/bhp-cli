@@ -487,7 +487,7 @@ namespace Bhp.Shell
                 "Wallet Commands:\n" +
                 "\tcreate wallet <path>\n" +
                 "\topen wallet <path>\n" +
-                "\tclose wallet <path>\n" +
+                "\tclose wallet \n" +
                 "\tupgrade wallet <path>\n" +
                 "\trebuild index\n" +
                 "\tlist address\n" +
