@@ -1040,7 +1040,11 @@ namespace Bhp.Shell
                 }
             store = new LevelDBStore(Path.GetFullPath(Settings.Default.Paths.Chain));
             system = new BhpSystem(store);
-            system.StartNode(Settings.Default.P2P.Port, Settings.Default.P2P.WsPort);
+            system.StartNode(
+                Settings.Default.P2P.Port,
+                Settings.Default.P2P.WsPort,
+                maxConnectionsPerAddress: Settings.Default.P2P.MaxConnectionsPerAddress);
+
             if (Settings.Default.UnlockWallet.IsActive)
             {
                 try
