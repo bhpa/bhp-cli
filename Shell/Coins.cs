@@ -169,7 +169,7 @@ namespace Bhp.Shell
 
             if (context.Completed)
             {
-                context.Verifiable.Witnesses = context.GetWitnesses();
+                tx.Witnesses = context.GetWitnesses();
 
                 if (tx.Size > Transaction.MaxTransactionSize)
                 {
