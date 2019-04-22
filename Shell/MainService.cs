@@ -855,10 +855,10 @@ namespace Bhp.Shell
             UIntBase assetId;
             switch (args[1].ToLower())
             {
-                case "bhp": 
+                case "bhp":
                     assetId = Blockchain.GoverningToken.Hash;
                     break;
-                case "gas": 
+                case "gas":
                     assetId = Blockchain.UtilityToken.Hash;
                     break;
                 default:
@@ -889,12 +889,22 @@ namespace Bhp.Shell
             else
             {
                 AssetDescriptor descriptor = new AssetDescriptor(assetId);
-                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount))
+                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount) || amount.Sign <= 0)
                 {
                     Console.WriteLine("Incorrect Amount Format");
                     return true;
                 }
-                Fixed8 fee = args.Length >= 5 ? Fixed8.Parse(args[4]) : Fixed8.Zero;
+
+                Fixed8 fee = Fixed8.Zero;
+                if (args.Length >= 5)
+                {
+                    if (!Fixed8.TryParse(args[4], out fee) || fee < Fixed8.Zero)
+                    {
+                        Console.WriteLine("Incorrect Fee Format");
+                        return true;
+                    }
+                }
+
                 tx = Program.Wallet.MakeTransaction(null, new[]
                 {
                     new TransferOutput
@@ -1008,10 +1018,10 @@ namespace Bhp.Shell
                 UInt256 assetId;
                 switch (args[2].ToLower())
                 {
-                    case "bhp": 
+                    case "bhp":
                         assetId = Blockchain.GoverningToken.Hash;
                         break;
-                    case "gas": 
+                    case "gas":
                         assetId = Blockchain.UtilityToken.Hash;
                         break;
                     default:
@@ -1045,8 +1055,8 @@ namespace Bhp.Shell
             store = new LevelDBStore(Path.GetFullPath(Settings.Default.Paths.Chain));
             system = new BhpSystem(store);
             system.StartNode(
-                Settings.Default.P2P.Port,
-                Settings.Default.P2P.WsPort,
+                port: Settings.Default.P2P.Port,
+                wsPort: Settings.Default.P2P.WsPort,                
                 minDesiredConnections: Settings.Default.P2P.MinDesiredConnections,
                 maxConnections: Settings.Default.P2P.MaxConnections,
                 maxConnectionsPerAddress: Settings.Default.P2P.MaxConnectionsPerAddress);
@@ -1080,7 +1090,8 @@ namespace Bhp.Shell
                     Settings.Default.RPC.Port,
                     wallet: Program.Wallet,
                     sslCert: Settings.Default.RPC.SslCert,
-                    password: Settings.Default.RPC.SslCertPassword);
+                    password: Settings.Default.RPC.SslCertPassword,
+                    maxGasInvoke: Settings.Default.RPC.MaxGasInvoke);
             }
         }
 
