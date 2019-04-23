@@ -964,11 +964,19 @@ namespace Bhp.Shell
         private bool OnShowPoolCommand(string[] args)
         {
             bool verbose = args.Length >= 3 && args[2] == "verbose";
-            Transaction[] transactions = Blockchain.Singleton.MemPool.ToArray();
             if (verbose)
-                foreach (Transaction tx in transactions)
-                    Console.WriteLine($"{tx.Hash} {tx.GetType().Name}");
-            Console.WriteLine($"total: {transactions.Length}");
+            {
+                Blockchain.Singleton.MemPool.GetVerifiedAndUnverifiedTransactions(
+                    out IEnumerable<Transaction> verifiedTransactions,
+                    out IEnumerable<Transaction> unverifiedTransactions);
+                Console.WriteLine("Verified Transactions:");
+                foreach (Transaction tx in verifiedTransactions)
+                    Console.WriteLine($" {tx.Hash} {tx.GetType().Name}");
+                Console.WriteLine("Unverified Transactions:");
+                foreach (Transaction tx in unverifiedTransactions)
+                    Console.WriteLine($" {tx.Hash} {tx.GetType().Name}");
+            }
+            Console.WriteLine($"total: {Blockchain.Singleton.MemPool.Count}, verified: {Blockchain.Singleton.MemPool.VerifiedCount}, unverified: {Blockchain.Singleton.MemPool.UnVerifiedCount}");
             return true;
         }
 
@@ -976,22 +984,36 @@ namespace Bhp.Shell
         private bool OnShowStateCommand(string[] args)
         {
             bool stop = false;
-            Task.Run(() =>
+            Console.CursorVisible = false;
+            Console.Clear();
+            Task task = Task.Run(async () =>
             {
                 while (!stop)
                 {
+                    Console.SetCursorPosition(0, 0);
                     uint wh = 0;
                     if (Program.Wallet != null)
                         wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
-                    Console.Clear();
-                    Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
-                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                        Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
-                    Thread.Sleep(500);
+
+                    WriteLineWithoutFlicker($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
+                    int linesWritten = 1;
+                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2).ToArray())
+                    {
+                        WriteLineWithoutFlicker(
+                            $"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.LastBlockIndex}");
+                        linesWritten++;
+                    }
+
+                    while (++linesWritten < Console.WindowHeight)
+                        WriteLineWithoutFlicker();
+                    await Task.Delay(500);
                 }
             });
             Console.ReadLine();
             stop = true;
+            task.Wait();
+            Console.WriteLine();
+            Console.CursorVisible = true;
             return true;
         }
         */
@@ -1056,7 +1078,7 @@ namespace Bhp.Shell
             system = new BhpSystem(store);
             system.StartNode(
                 port: Settings.Default.P2P.Port,
-                wsPort: Settings.Default.P2P.WsPort,                
+                wsPort: Settings.Default.P2P.WsPort,
                 minDesiredConnections: Settings.Default.P2P.MinDesiredConnections,
                 maxConnections: Settings.Default.P2P.MaxConnections,
                 maxConnectionsPerAddress: Settings.Default.P2P.MaxConnectionsPerAddress);
@@ -1404,6 +1426,14 @@ namespace Bhp.Shell
                 brc6wallet.Unlock(password);
                 return brc6wallet;
             }
+        }
+
+        private static void WriteLineWithoutFlicker(string message = "", int maxWidth = 80)
+        {
+            if (message.Length > 0) Console.Write(message);
+            var spacesToErase = maxWidth - message.Length;
+            if (spacesToErase < 0) spacesToErase = 0;
+            Console.WriteLine(new string(' ', spacesToErase));
         }
     }
 }
