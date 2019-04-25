@@ -136,17 +136,7 @@ namespace Bhp.Shell
                 case "tx":
                     payload = Blockchain.Singleton.GetTransaction(UInt256.Parse(args[2]));
                     break;
-                case "alert":
-                case "consensus":
-                case "filteradd":
-                case "filterload":
-                case "headers":
-                case "merkleblock":
-                case "ping":
-                case "pong":
-                case "reject":
-                case "verack":
-                case "version":
+                default:
                     Console.WriteLine($"Command \"{command}\" is not supported.");
                     return true;
             }
