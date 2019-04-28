@@ -32,9 +32,7 @@ using ECPoint = Bhp.Cryptography.ECC.ECPoint;
 namespace Bhp.Shell
 {
     internal class MainService : ConsoleServiceBase
-    {
-        private const string PeerStatePath = "peers.dat";
-
+    {        
         private LevelDBStore store;
         private BhpSystem system;
         private WalletIndexer indexer;
@@ -1344,18 +1342,32 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
+
+            bool isTemp;
+            string fileName;
             var pluginName = args[1];
-            var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
-            var fileName = Path.Combine("Plugins", $"{pluginName}.zip");
-            Directory.CreateDirectory("Plugins");
-            Console.WriteLine($"Downloading from {address}");
-            using (WebClient wc = new WebClient())
+
+            if (!File.Exists(pluginName))
             {
-                wc.DownloadFile(address, fileName);
+                var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
+                fileName = Path.Combine(Path.GetTempPath(), $"{pluginName}.zip");
+                isTemp = true;
+
+                Console.WriteLine($"Downloading from {address}");
+                using (WebClient wc = new WebClient())
+                {
+                    wc.DownloadFile(address, fileName);
+                }
             }
+            else
+            {
+                fileName = pluginName;
+                isTemp = false;
+            }
+
             try
             {
-                ZipFile.ExtractToDirectory(fileName, ".");
+                ZipFile.ExtractToDirectory(fileName, Path.Combine(".", "Plugins", $"{Path.GetFileNameWithoutExtension(fileName)}"));
             }
             catch (IOException)
             {
@@ -1364,8 +1376,12 @@ namespace Bhp.Shell
             }
             finally
             {
-                File.Delete(fileName);
+                if (isTemp)
+                {
+                    File.Delete(fileName);
+                }
             }
+
             Console.WriteLine($"Install successful, please restart bhp-cli.");
             return true;
         }
