@@ -873,6 +873,27 @@ namespace Bhp.Shell
                         }
                     }
                 };
+                ContractParametersContext context = new ContractParametersContext(tx);
+                Program.Wallet.Sign(context);
+                if (context.Completed)
+                {
+                    tx.Witnesses = context.GetWitnesses();
+
+                    if (tx.Size > Transaction.MaxTransactionSize)
+                    {
+                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                        return true;
+                    }
+
+                    Program.Wallet.ApplyTransaction(tx);
+                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                    Console.WriteLine($"TXID: {tx.Hash}");
+                }
+                else
+                {
+                    Console.WriteLine("SignatureContext:");
+                    Console.WriteLine(context.ToString());
+                }
             }
             else
             {
@@ -907,28 +928,53 @@ namespace Bhp.Shell
                     Console.WriteLine("Insufficient funds");
                     return true;
                 }
-            }
-            ContractParametersContext context = new ContractParametersContext(tx);
-            Program.Wallet.Sign(context);
-            if (context.Completed)
-            {
-                tx.Witnesses = context.GetWitnesses();
 
-                if (tx.Size > Transaction.MaxTransactionSize)
+                ContractParametersContext context = new ContractParametersContext(tx);
+                Program.Wallet.Sign(context);
+                if (context.Completed)
                 {
-                    Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
-                    return true;
-                }
+                    tx.Witnesses = context.GetWitnesses();
+                    if (tx.Size > 1024)
+                    {
+                        Fixed8 calFee = Fixed8.FromDecimal(tx.Size * 0.00001m + 0.001m);
+                        if (fee < calFee)
+                        {
+                            fee = calFee;
+                            tx = Program.Wallet.MakeTransaction(null, new[]
+                            {
+                                new TransferOutput
+                                {
+                                    AssetId = assetId,
+                                    Value = amount,
+                                    ScriptHash = scriptHash
+                                }
+                            }, fee: fee);
+                            if (tx == null)
+                            {
+                                Console.WriteLine("Insufficient funds");
+                                return true;
+                            }
+                            context = new ContractParametersContext(tx);
+                            Program.Wallet.Sign(context);
+                            tx.Witnesses = context.GetWitnesses();
+                        }
+                    }
+                    if (tx.Size > Transaction.MaxTransactionSize)
+                    {
+                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                        return true;
+                    }
 
-                Program.Wallet.ApplyTransaction(tx);
-                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-                Console.WriteLine($"TXID: {tx.Hash}");
-            }
-            else
-            {
-                Console.WriteLine("SignatureContext:");
-                Console.WriteLine(context.ToString());
-            }
+                    Program.Wallet.ApplyTransaction(tx);
+                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                    Console.WriteLine($"TXID: {tx.Hash}");
+                }
+                else
+                {
+                    Console.WriteLine("SignatureContext:");
+                    Console.WriteLine(context.ToString());
+                }
+            }            
             return true;
         }
 
