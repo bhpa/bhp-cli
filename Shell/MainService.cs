@@ -934,6 +934,13 @@ namespace Bhp.Shell
                 if (context.Completed)
                 {
                     tx.Witnesses = context.GetWitnesses();
+
+                    if (tx.Size > Transaction.MaxTransactionSize)
+                    {
+                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                        return true;
+                    }
+
                     if (tx.Size > 102400)
                     {
                         Fixed8 calFee = Fixed8.FromDecimal(tx.Size * 0.00001m + 0.001m);
@@ -959,12 +966,7 @@ namespace Bhp.Shell
                             tx.Witnesses = context.GetWitnesses();
                         }
                     }
-                    if (tx.Size > Transaction.MaxTransactionSize)
-                    {
-                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
-                        return true;
-                    }
-
+                    
                     Program.Wallet.ApplyTransaction(tx);
                     system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
                     Console.WriteLine($"TXID: {tx.Hash}");
