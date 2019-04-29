@@ -934,7 +934,7 @@ namespace Bhp.Shell
                 if (context.Completed)
                 {
                     tx.Witnesses = context.GetWitnesses();
-                    if (tx.Size > 1024)
+                    if (tx.Size > 102400)
                     {
                         Fixed8 calFee = Fixed8.FromDecimal(tx.Size * 0.00001m + 0.001m);
                         if (fee < calFee)
@@ -1264,7 +1264,7 @@ namespace Bhp.Shell
         {
             Fixed8 fee = Fixed8.FromDecimal(0.001m);
 
-            if (tx.Size > 1024)
+            if (tx.Size > 102400)
             {
                 fee += Fixed8.FromDecimal(tx.Size * 0.00001m);
             }
