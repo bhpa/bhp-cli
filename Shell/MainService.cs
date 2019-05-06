@@ -1345,8 +1345,10 @@ namespace Bhp.Shell
             var tx = new InvocationTransaction();
 
             using (ScriptBuilder scriptBuilder = new ScriptBuilder())
-            {
-                scriptBuilder.EmitAppCall(scriptHash, parameters);
+            {                
+                for (int i = parameters.Length - 1; i >= 0; i--)
+                    scriptBuilder.EmitPush(parameters[i]);
+                scriptBuilder.EmitPush(scriptHash.ToArray());                
                 Console.WriteLine($"Invoking script with: '{scriptBuilder.ToArray().ToHexString()}'");
                 tx.Script = scriptBuilder.ToArray();
             }
