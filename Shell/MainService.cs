@@ -112,33 +112,45 @@ namespace Bhp.Shell
         {
             string command = args[1].ToLower();
             ISerializable payload = null;
+            MessageCommand messageCommand;
             switch (command)
             {
                 case "addr":
-                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(new IPEndPoint(IPAddress.Parse(args[2]), ushort.Parse(args[3])), NetworkAddressWithTime.NODE_NETWORK, DateTime.UtcNow.ToTimestamp()));
+                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(new IPEndPoint(IPAddress.Parse(args[2]), ushort.Parse(args[3])), VersionServices.NodeNetwork, DateTime.UtcNow.ToTimestamp()));
+                    messageCommand = MessageCommand.Addr;
                     break;
                 case "block":
                     if (args[2].Length == 64 || args[2].Length == 66)
                         payload = Blockchain.Singleton.GetBlock(UInt256.Parse(args[2]));
                     else
                         payload = Blockchain.Singleton.Store.GetBlock(uint.Parse(args[2]));
+                    messageCommand = MessageCommand.Block;
                     break;
                 case "getblocks":
+                    payload = GetBlocksPayload.Create(UInt256.Parse(args[2]));
+                    messageCommand = MessageCommand.GetBlocks;
+                    break;
                 case "getheaders":
                     payload = GetBlocksPayload.Create(UInt256.Parse(args[2]));
+                    messageCommand = MessageCommand.GetHeaders;
                     break;
                 case "getdata":
+                    payload = InvPayload.Create(Enum.Parse<InventoryType>(args[2], true), args.Skip(3).Select(UInt256.Parse).ToArray());
+                    messageCommand = MessageCommand.GetData;
+                    break;
                 case "inv":
                     payload = InvPayload.Create(Enum.Parse<InventoryType>(args[2], true), args.Skip(3).Select(UInt256.Parse).ToArray());
+                    messageCommand = MessageCommand.Inv;
                     break;
                 case "tx":
                     payload = Blockchain.Singleton.GetTransaction(UInt256.Parse(args[2]));
+                    messageCommand = MessageCommand.Transaction;
                     break;
                 default:
                     Console.WriteLine($"Command \"{command}\" is not supported.");
                     return true;
             }
-            system.LocalNode.Tell(Message.Create(command, payload));
+            system.LocalNode.Tell(Message.Create(messageCommand, payload));
             return true;
         }
 
