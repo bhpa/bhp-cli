@@ -293,11 +293,11 @@ namespace Bhp.Services
                 if (line == null) break;
                 Console.ForegroundColor = ConsoleColor.White;
 
-                string[] args = ParseCommandLine(line);
-                if (args.Length == 0)
-                    args = emptyarg;
                 try
                 {
+                    string[] args = ParseCommandLine(line);
+                    if (args.Length == 0)
+                        args = emptyarg;
                     running = OnCommand(args);
                 }
                 catch (Exception ex)
