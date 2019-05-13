@@ -48,6 +48,9 @@ Download and unzip [latest release](https://github.com/BhpAlpha/bhp-cli/releases
 ```sh
 dotnet bhp-cli.dll
 ```
+## Download plugins release binaries
+Move wallet rpc to rpcwallet plugin after v1.2.0.6
+Download the same version and unzip [latest release](https://github.com/BhpAlpha/bhp-plugins/releases).
 
 ## Compile from source
 
