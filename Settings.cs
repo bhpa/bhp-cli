@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Bhp.Network.P2P;
 using System.Net;
+using Bhp.SmartContract.Native;
 
 namespace Bhp
 {
@@ -68,7 +69,7 @@ namespace Bhp
         public ushort Port { get; }
         public string SslCert { get; }
         public string SslCertPassword { get; }
-        public Fixed8 MaxGasInvoke { get; }
+        public long MaxGasInvoke { get; }
 
         public RPCSettings(IConfigurationSection section)
         {
@@ -76,7 +77,7 @@ namespace Bhp
             this.Port = ushort.Parse(section.GetSection("Port").Value);
             this.SslCert = section.GetSection("SslCert").Value;
             this.SslCertPassword = section.GetSection("SslCertPassword").Value;
-            this.MaxGasInvoke = Fixed8.Parse(section.GetValue("MaxGasInvoke", "0"));
+            this.MaxGasInvoke = (long)BigDecimal.Parse(section.GetValue("MaxGasInvoke", "0"), NativeContract.GAS.Decimals).Value;
         }
     }
 
