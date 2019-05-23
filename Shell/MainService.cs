@@ -1411,6 +1411,12 @@ namespace Bhp.Shell
 
             if (!File.Exists(pluginName))
             {
+                if (string.IsNullOrEmpty(Settings.Default.PluginURL))
+                {
+                    Console.WriteLine("You must define `PluginURL` in your `config.json`");
+                    return true;
+                }
+
                 var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
                 fileName = Path.Combine(Path.GetTempPath(), $"{pluginName}.zip");
                 isTemp = true;
