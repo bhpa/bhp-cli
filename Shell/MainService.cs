@@ -5,6 +5,7 @@ using Bhp.IO;
 using Bhp.IO.Json;
 using Bhp.Ledger;
 using Bhp.Network.P2P;
+using Bhp.Network.P2P.Capabilities;
 using Bhp.Network.P2P.Payloads;
 using Bhp.Persistence;
 using Bhp.Persistence.LevelDB;
@@ -116,7 +117,7 @@ namespace Bhp.Shell
             switch (command)
             {
                 case "addr":
-                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(new IPEndPoint(IPAddress.Parse(args[2]), ushort.Parse(args[3])), VersionServices.NodeNetwork, DateTime.UtcNow.ToTimestamp()));
+                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(IPAddress.Parse(args[2]), DateTime.UtcNow.ToTimestamp(), new FullNodeCapability(), new ServerCapability(NodeCapabilityType.TcpServer, ushort.Parse(args[3]))));                    
                     messageCommand = MessageCommand.Addr;
                     break;
                 case "block":
@@ -1074,7 +1075,7 @@ namespace Bhp.Shell
             Console.WriteLine("------------------------------RemoteNode List------------------------------");
             Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
             foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
+                Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerTcpPort}\theight: {node.LastBlockIndex}");
             Console.WriteLine("---------------------------------------------------------------------------");
             return true;
         }
@@ -1124,12 +1125,14 @@ namespace Bhp.Shell
                 }
             store = new LevelDBStore(Path.GetFullPath(Settings.Default.Paths.Chain));
             system = new BhpSystem(store);
-            system.StartNode(
-                port: Settings.Default.P2P.Port,
-                wsPort: Settings.Default.P2P.WsPort,
-                minDesiredConnections: Settings.Default.P2P.MinDesiredConnections,
-                maxConnections: Settings.Default.P2P.MaxConnections,
-                maxConnectionsPerAddress: Settings.Default.P2P.MaxConnectionsPerAddress);
+            system.StartNode(new ChannelsConfig
+            {
+                Tcp = new IPEndPoint(IPAddress.Any, Settings.Default.P2P.Port),
+                WebSocket = new IPEndPoint(IPAddress.Any, Settings.Default.P2P.WsPort),
+                MinDesiredConnections = Settings.Default.P2P.MinDesiredConnections,
+                MaxConnections = Settings.Default.P2P.MaxConnections,
+                MaxConnectionsPerAddress = Settings.Default.P2P.MaxConnectionsPerAddress
+            });
 
             if (Settings.Default.UnlockWallet.IsActive)
             {
@@ -1157,11 +1160,11 @@ namespace Bhp.Shell
             if (useRPC)
             {
                 system.StartRpc(Settings.Default.RPC.BindAddress,
-                    Settings.Default.RPC.Port,
-                    wallet: Program.Wallet,
-                    sslCert: Settings.Default.RPC.SslCert,
-                    password: Settings.Default.RPC.SslCertPassword,
-                    maxGasInvoke: Settings.Default.RPC.MaxGasInvoke);
+                   Settings.Default.RPC.Port,
+                   wallet: Program.Wallet,
+                   sslCert: Settings.Default.RPC.SslCert,
+                   password: Settings.Default.RPC.SslCertPassword,
+                   maxGasInvoke: Fixed8.Parse(Settings.Default.RPC.MaxGasInvoke.ToString()));
             }
         }
 
@@ -1204,73 +1207,42 @@ namespace Bhp.Shell
         private bool OnDeployCommand(string[] args)
         {
             if (NoWallet()) return true;
-            var tx = LoadScriptTransaction(
+            byte[] script = LoadDeploymentScript(
                 /* filePath */ args[1],
-                /* paramTypes */ args[2],
-                /* returnType */ args[3],
-                /* hasStorage */ args[4].ToBool(),
-                /* hasDynamicInvoke */ args[5].ToBool(),
-                /* isPayable */ args[6].ToBool(),
-                /* contractName */ args[7],
-                /* contractVersion */ args[8],
-                /* contractAuthor */ args[9],
-                /* contractEmail */ args[10],
-                /* contractDescription */ args[11],
+                /* hasStorage */ args[2].ToBool(),
+                /* isPayable */ args[3].ToBool(),
                 /* scriptHash */ out var scriptHash);
 
-            tx.Version = 1;
-            if (tx.Attributes == null) tx.Attributes = new TransactionAttribute[0];
-            if (tx.Inputs == null) tx.Inputs = new CoinReference[0];
-            if (tx.Outputs == null) tx.Outputs = new TransactionOutput[0];
-            if (tx.Witnesses == null) tx.Witnesses = new Witness[0];
-            ApplicationEngine engine = ApplicationEngine.Run(tx.Script, tx, null, true);
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine($"Script hash: {scriptHash.ToString()}");
-            sb.AppendLine($"VM State: {engine.State}");
-            sb.AppendLine($"Gas Consumed: {engine.GasConsumed}");
-            sb.AppendLine(
-                $"Evaluation Stack: {new JArray(engine.ResultStack.Select(p => p.ToParameter().ToJson()))}");
-            Console.WriteLine(sb.ToString());
-            if (engine.State.HasFlag(VMState.FAULT))
+            Transaction tx = new Transaction { Script = script };
+            try
+            {
+                Program.Wallet.FillTransaction(tx);
+            }
+            catch (InvalidOperationException)
             {
                 Console.WriteLine("Engine faulted.");
                 return true;
             }
+            Console.WriteLine($"Script hash: {scriptHash.ToString()}");
+            Console.WriteLine($"Gas: {tx.Gas}");
+            Console.WriteLine();
 
-            tx.Gas = engine.GasConsumed - Fixed8.FromDecimal(10);
-            if (tx.Gas < Fixed8.Zero) tx.Gas = Fixed8.Zero;
-            tx.Gas = tx.Gas.Ceiling();
-
-            tx = DecorateInvocationTransaction(tx);
+            DecorateInvocationTransaction(tx);
 
             return SignAndSendTx(tx);
         }
 
-        public InvocationTransaction LoadScriptTransaction(
-            string avmFilePath, string paramTypes, string returnTypeHexString,
-            bool hasStorage, bool hasDynamicInvoke, bool isPayable,
-            string contractName, string contractVersion, string contractAuthor,
-            string contractEmail, string contractDescription, out UInt160 scriptHash)
+        private byte[] LoadDeploymentScript(string avmFilePath, bool hasStorage, bool isPayable, out UInt160 scriptHash)
         {
             byte[] script = File.ReadAllBytes(avmFilePath);
-            // See ContractParameterType Enum
-            byte[] parameterList = paramTypes.HexToBytes();
-            ContractParameterType returnType = returnTypeHexString.HexToBytes()
-                .Select(p => (ContractParameterType?)p).FirstOrDefault() ?? ContractParameterType.Void;
+            scriptHash = script.ToScriptHash();
             ContractPropertyState properties = ContractPropertyState.NoProperty;
             if (hasStorage) properties |= ContractPropertyState.HasStorage;
-            if (hasDynamicInvoke) properties |= ContractPropertyState.HasDynamicInvoke;
             if (isPayable) properties |= ContractPropertyState.Payable;
             using (ScriptBuilder sb = new ScriptBuilder())
             {
-                scriptHash = script.ToScriptHash();
-
-                sb.EmitSysCall("Bhp.Contract.Create", script, parameterList, returnType, properties,
-                    contractName, contractVersion, contractAuthor, contractEmail, contractDescription);
-                return new InvocationTransaction
-                {
-                    Script = sb.ToArray()
-                };
+                sb.EmitSysCall(InteropService.Bhp_Contract_Create, script, properties);
+                return sb.ToArray();
             }
         }
 
@@ -1292,6 +1264,16 @@ namespace Bhp.Shell
                 Inputs = tx.Inputs,
                 Outputs = tx.Outputs
             }, fee: fee);
+        }
+
+        public void DecorateInvocationTransaction(Transaction tx)
+        {
+            tx.NetworkFee = 100000;
+
+            if (tx.Size > 1024)
+            {
+                tx.NetworkFee += tx.Size * 1000;
+            }
         }
 
         public bool SignAndSendTx(InvocationTransaction tx)
