@@ -10,7 +10,6 @@ using System.Linq;
 
 namespace Bhp.Shell
 {
-
     public class Coins
     {
         private Wallet current_wallet;
@@ -82,15 +81,12 @@ namespace Bhp.Shell
                     }
 
                 };
-
                 return (ClaimTransaction)SignTransaction(tx);
             }
         }
 
-
         public ClaimTransaction[] ClaimAll(UInt160 change_address = null)
         {
-
             if (this.AvailableBonus() == Fixed8.Zero)
             {
                 Console.WriteLine($"no gas to claim");
