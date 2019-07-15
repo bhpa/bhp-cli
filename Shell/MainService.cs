@@ -25,7 +25,6 @@ using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using ECCurve = Bhp.Cryptography.ECC.ECCurve;
 using ECPoint = Bhp.Cryptography.ECC.ECPoint;
@@ -37,6 +36,7 @@ namespace Bhp.Shell
         private LevelDBStore store;
         private BhpSystem system;
         private WalletIndexer indexer;
+        private System.Timers.Timer exportWalletTimer;
 
         protected override string Prompt => "bhp";
         public override string ServiceName => $"BHP-CLI V{Assembly.GetEntryAssembly().GetName().Version.ToString()}";
@@ -352,6 +352,8 @@ namespace Bhp.Shell
             {
                 case "key":
                     return OnExportKeyCommand(args);
+                case "wallet":
+                    return OnExportWalletCommand(args);
                 case "block":
                 case "blocks":
                     return OnExportBlocksCommand(args);
@@ -488,6 +490,99 @@ namespace Bhp.Shell
             return true;
         }
 
+        private bool OnExportWalletCommand(string[] args)
+        {
+            if (NoWallet()) return true;
+            if (args.Length != 3)
+            {
+                Console.WriteLine("error");
+                return true;
+            }
+            string path = args[2];
+            if (File.Exists(path))
+            {
+                Console.WriteLine("file is exist");
+                return true;
+            }
+            string password = ReadPassword("password");
+            if (password.Length == 0)
+            {
+                Console.WriteLine("cancelled");
+                return true;
+            }
+            if (!Program.Wallet.VerifyPassword(password))
+            {
+                Console.WriteLine("Incorrect password");
+                return true;
+            }
+
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Append, FileAccess.Write))
+                {
+                    using (StreamWriter sw = new StreamWriter(fs))
+                    {
+                        int x = 0;
+                        int count = Program.Wallet.GetAccounts().Where(p => p.HasKey).Count();
+                        foreach (WalletAccount account in Program.Wallet.GetAccounts().Where(p => p.HasKey))
+                        {
+                            x++;
+                            //WIF 私钥 公钥 地址   
+                            KeyPair key = account.GetKey();
+                            sw.WriteLine($"{key.Export()} {key.PrivateKey.ToHexString()} {key.PublicKey.EncodePoint(true).ToHexString()} {account.Address}");
+                            sw.Flush();
+                            Console.SetCursorPosition(0, Console.CursorTop);
+                            Console.Write($"[{x}/{count}]");
+                        }
+                        sw.Flush();
+                        sw.Close();
+                    }
+                    fs.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Export wallet failed");
+                return true;
+            }
+            Console.WriteLine();
+            Console.WriteLine($"Export wallet to {path} success");
+            return true;
+        }
+
+        public static string ReadPassword(string prompt)
+        {
+            const string t = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+            StringBuilder sb = new StringBuilder();
+            ConsoleKeyInfo key;
+            Console.Write(prompt);
+            Console.Write(": ");
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+
+            do
+            {
+                key = Console.ReadKey(true);
+                if (t.IndexOf(key.KeyChar) != -1)
+                {
+                    sb.Append(key.KeyChar);
+                    Console.Write('*');
+                }
+                else if (key.Key == ConsoleKey.Backspace && sb.Length > 0)
+                {
+                    sb.Length--;
+                    Console.Write(key.KeyChar);
+                    Console.Write(' ');
+                    Console.Write(key.KeyChar);
+                }
+            } while (key.Key != ConsoleKey.Enter);
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine();
+            return sb.ToString();
+        }
+
         private bool OnHelpCommand(string[] args)
         {
             Console.Write(
@@ -511,6 +606,7 @@ namespace Bhp.Shell
                 "\tcreate address [n=1]\n" +
                 "\timport key <wif|path>\n" +
                 "\texport key [address] [path]\n" +
+                "\texport wallet <path>\n" +
                 "\timport multisigaddress m pubkeys...\n" +
                 "\tsend <id|alias> <address> <value>|all [fee=0]\n" +
                 "\tsign <jsonObjectToSign>\n" +
@@ -1165,6 +1261,43 @@ namespace Bhp.Shell
                    sslCert: Settings.Default.RPC.SslCert,
                    password: Settings.Default.RPC.SslCertPassword,
                    maxGasInvoke: Fixed8.Parse(Settings.Default.RPC.MaxGasInvoke.ToString()));
+            }
+
+            if (Settings.Default.ExportWallet.IsActive)
+            {
+                exportWalletTimer = new System.Timers.Timer();
+                exportWalletTimer.Interval = Settings.Default.ExportWallet.Interval * 60 * 60 * 1000;
+                exportWalletTimer.Elapsed += ExportWalletTimer_Elapsed;
+                exportWalletTimer.Start();
+            }
+        }
+
+        private void ExportWalletTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            if (Program.Wallet == null || Program.Wallet.GetAccounts().Count() <= 0) return;
+            string walletName = Path.GetFileNameWithoutExtension(Program.Wallet.WalletPath);
+            try
+            {
+                string path = Path.Combine(Settings.Default.ExportWallet.Path, $"{walletName}{DateTime.Now.ToString("yyyyMMddHHmmss")}.txt");
+                using (FileStream fs = new FileStream(path, FileMode.Append, FileAccess.Write))
+                {
+                    using (StreamWriter sw = new StreamWriter(fs))
+                    {
+                        foreach (WalletAccount account in Program.Wallet.GetAccounts().Where(p => p.HasKey))
+                        {
+                            //WIF 私钥 公钥 地址  
+                            KeyPair key = account.GetKey();
+                            sw.WriteLine($"{key.Export()} {key.PrivateKey.ToHexString()} {key.PublicKey.EncodePoint(true).ToHexString()} {account.Address}");
+                            sw.Flush();
+                        }
+                        sw.Flush();
+                        sw.Close();
+                    }
+                    fs.Close();
+                }
+            }
+            catch (Exception ex)
+            {
             }
         }
 

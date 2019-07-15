@@ -13,6 +13,7 @@ namespace Bhp
         public UnlockWalletSettings UnlockWallet { get; }
         public string PluginURL { get; }
         public DataRPCSettings DataRPC { get; set; }
+        public ExportWalletSettings ExportWallet { get; set; }
 
         public static Settings Default { get; }
 
@@ -30,6 +31,7 @@ namespace Bhp
             this.UnlockWallet = new UnlockWalletSettings(section.GetSection("UnlockWallet"));
             this.PluginURL = section.GetSection("PluginURL").Value;
             DataRPC = new DataRPCSettings(section.GetSection("DataRPC"));
+            this.ExportWallet = new ExportWalletSettings(section.GetSection("ExportWallet"));
         }
     }
 
@@ -111,6 +113,27 @@ namespace Bhp
             if (section != null)
             {
                 Host = section.GetSection("Host").Value;
+            }
+        }
+    }
+
+    internal class ExportWalletSettings
+    {
+        public string Path { get; }
+        public int Interval { get; }
+        public bool IsActive { get; }
+
+        public ExportWalletSettings(IConfigurationSection section)
+        {
+            if (section.Exists())
+            {
+                this.Path = section.GetSection("Path").Value;
+                this.Interval = int.Parse(section.GetSection("Interval").Value);
+                if (this.Interval <= 0)
+                {
+                    this.Interval = 8;
+                }
+                this.IsActive = bool.Parse(section.GetSection("IsActive").Value);
             }
         }
     }
