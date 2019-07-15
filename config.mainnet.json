@@ -24,6 +24,11 @@
     "PluginURL": "",
     "DataRPC": {
       "Host": "http://exp.bhpa.io:7070"
+    },
+    "ExportWallet": {
+      "Path": "",
+      "Interval": 8,
+      "IsActive": false
     }
   }
 }
