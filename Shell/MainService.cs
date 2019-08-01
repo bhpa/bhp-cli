@@ -982,6 +982,15 @@ namespace Bhp.Shell
                         }
                     }
                 };
+                if (assetId.Equals(Blockchain.GoverningToken.Hash))
+                {
+                    tx.Outputs[0].Value -= BhpExtensions.Fees.BhpTxFee.EstimateTxFee(tx);
+                    if (tx.Outputs[0].Value <= Fixed8.Zero)
+                    {
+                        Console.WriteLine("Insufficient funds.");
+                        return true;
+                    }
+                }
                 ContractParametersContext context = new ContractParametersContext(tx);
                 Program.Wallet.Sign(context);
                 if (context.Completed)
