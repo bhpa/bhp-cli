@@ -1367,14 +1367,22 @@ namespace Bhp.Shell
 
         private byte[] LoadDeploymentScript(string avmFilePath, bool hasStorage, bool isPayable, out UInt160 scriptHash)
         {
-            byte[] script = File.ReadAllBytes(avmFilePath);
-            scriptHash = script.ToScriptHash();
+            var info = new FileInfo(avmFilePath);
+            if (!info.Exists || info.Length >= Transaction.MaxTransactionSize) {
+                throw new ArgumentException(nameof(avmFilePath));
+            }
+            NefFile file;
+            using (var stream = new BinaryReader(File.OpenRead(avmFilePath), Encoding.UTF8, false))
+            {
+                file = stream.ReadSerializable<NefFile>();
+            }
+            scriptHash = file.ScriptHash;
             ContractPropertyState properties = ContractPropertyState.NoProperty;
             if (hasStorage) properties |= ContractPropertyState.HasStorage;
             if (isPayable) properties |= ContractPropertyState.Payable;
             using (ScriptBuilder sb = new ScriptBuilder())
             {
-                sb.EmitSysCall(InteropService.Bhp_Contract_Create, script, properties);
+                sb.EmitSysCall(InteropService.Bhp_Contract_Create, file.Script, properties);
                 return sb.ToArray();
             }
         }
