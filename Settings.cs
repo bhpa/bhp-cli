@@ -2,6 +2,7 @@
 using Bhp.Network.P2P;
 using System.Net;
 using Bhp.SmartContract.Native;
+using System.Threading;
 
 namespace Bhp
 {
@@ -15,12 +16,30 @@ namespace Bhp
         public DataRPCSettings DataRPC { get; set; }
         public ExportWalletSettings ExportWallet { get; set; }
 
-        public static Settings Default { get; }
+        static Settings _default;
 
-        static Settings()
+        static bool UpdateDefault(IConfiguration configuration)
         {
-            IConfigurationSection section = new ConfigurationBuilder().AddJsonFile("config.json").Build().GetSection("ApplicationConfiguration");
-            Default = new Settings(section);
+            var settings = new Settings(configuration.GetSection("ApplicationConfiguration"));
+            return null == Interlocked.CompareExchange(ref _default, settings, null);
+        }
+
+        public static bool Initialize(IConfiguration configuration)
+        {
+            return UpdateDefault(configuration);
+        }
+
+        public static Settings Default
+        {
+            get
+            {
+                if (_default == null)
+                {
+                    UpdateDefault(new ConfigurationBuilder().AddJsonFile("config.json").Build());
+                }
+
+                return _default;
+            }
         }
 
         public Settings(IConfigurationSection section)
