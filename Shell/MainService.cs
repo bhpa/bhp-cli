@@ -16,6 +16,7 @@ using Bhp.VM;
 using Bhp.Wallets;
 using Bhp.Wallets.BRC6;
 using Bhp.Wallets.SQLite;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -1226,6 +1227,18 @@ namespace Bhp.Shell
                     case "--rpc":
                     case "-r":
                         useRPC = true;
+                        break;
+                    case "/testnet":
+                    case "--testnet":
+                    case "-t":
+                        ProtocolSettings.Initialize(new ConfigurationBuilder().AddJsonFile("protocol.testnet.json").Build());
+                        Settings.Initialize(new ConfigurationBuilder().AddJsonFile("config.testnet.json").Build());
+                        break;
+                    case "/mainnet":
+                    case "--mainnet":
+                    case "-m":
+                        ProtocolSettings.Initialize(new ConfigurationBuilder().AddJsonFile("protocol.mainnet.json").Build());
+                        Settings.Initialize(new ConfigurationBuilder().AddJsonFile("config.mainnet.json").Build());
                         break;
                 }
             store = new LevelDBStore(Path.GetFullPath(Settings.Default.Paths.Chain));
