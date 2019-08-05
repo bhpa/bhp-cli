@@ -19,7 +19,8 @@
       "Password": "",
       "StartConsensus": false,
       "IsActive": false,
-      "AutoLock": false
+      "AutoLock": false,
+      "IsBhpFee": false
     },
     "PluginURL": "",
     "DataRPC": {

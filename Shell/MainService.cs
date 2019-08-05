@@ -90,7 +90,14 @@ namespace Bhp.Shell
                 case "rebuild":
                     return OnRebuildCommand(args);
                 case "send":
-                    return OnSendCommand(args);
+                    if (ExtensionSettings.Default.WalletConfig.IsBhpFee)
+                    {
+                        return OnSendCommandEx(args);
+                    }
+                    else
+                    {
+                        return OnSendCommand(args);
+                    }
                 case "show":
                     return OnShowCommand(args);
                 case "start":
@@ -1099,6 +1106,184 @@ namespace Bhp.Shell
             return true;
         }
 
+        private bool OnSendCommandEx(string[] args)
+        {
+            if (args.Length < 4 || args.Length > 5)
+            {
+                Console.WriteLine("error");
+                return true;
+            }
+            if (NoWallet()) return true;
+            string password = ReadUserInput("password", true);
+            if (password.Length == 0)
+            {
+                Console.WriteLine("cancelled");
+                return true;
+            }
+            if (!Program.Wallet.VerifyPassword(password))
+            {
+                Console.WriteLine("Incorrect password");
+                return true;
+            }
+            UIntBase assetId;
+            switch (args[1].ToLower())
+            {
+                case "bhp":
+                    assetId = Blockchain.GoverningToken.Hash;
+                    break;
+                case "gas":
+                    assetId = Blockchain.UtilityToken.Hash;
+                    break;
+                default:
+                    assetId = UIntBase.Parse(args[1]);
+                    break;
+            }
+            UInt160 scriptHash = args[2].ToScriptHash();
+            bool isSendAll = string.Equals(args[3], "all", StringComparison.OrdinalIgnoreCase);
+            Transaction tx;
+            if (isSendAll)
+            {
+                Coin[] coins = Program.Wallet.FindUnspentCoins().Where(p => p.Output.AssetId.Equals(assetId)).ToArray();
+                tx = new ContractTransaction
+                {
+                    Attributes = new TransactionAttribute[0],
+                    Inputs = coins.Select(p => p.Reference).ToArray(),
+                    Outputs = new[]
+                    {
+                        new TransactionOutput
+                        {
+                            AssetId = (UInt256)assetId,
+                            Value = coins.Sum(p => p.Output.Value),
+                            ScriptHash = scriptHash
+                        }
+                    }
+                };
+                if (assetId.Equals(Blockchain.GoverningToken.Hash))
+                {
+                    tx.Outputs[0].Value -= BhpExtensions.Fees.BhpTxFee.EstimateTxFee(tx);
+                    if (tx.Outputs[0].Value <= Fixed8.Zero)
+                    {
+                        Console.WriteLine("Insufficient funds.");
+                        return true;
+                    }
+                }
+                else if (!assetId.Equals(Blockchain.UtilityToken.Hash))
+                {
+                    tx = Bhp.BhpExtensions.Transactions.TransactionContract.EstimateFee(Program.Wallet, tx, null, null);
+                    if (tx == null)
+                    {
+                        Console.WriteLine("Insufficient funds");
+                        return true;
+                    }
+                }
+
+                ContractParametersContext context = new ContractParametersContext(tx);
+                Program.Wallet.Sign(context);
+                if (context.Completed)
+                {
+                    tx.Witnesses = context.GetWitnesses();
+
+                    if (tx.Size > Transaction.MaxTransactionSize)
+                    {
+                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                        return true;
+                    }
+
+                    Program.Wallet.ApplyTransaction(tx);
+                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                    Console.WriteLine($"TXID: {tx.Hash}");
+                }
+                else
+                {
+                    Console.WriteLine("SignatureContext:");
+                    Console.WriteLine(context.ToString());
+                }
+            }
+            else
+            {
+                AssetDescriptor descriptor = new AssetDescriptor(assetId);
+                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount) || amount.Sign <= 0)
+                {
+                    Console.WriteLine("Incorrect Amount Format");
+                    return true;
+                }
+
+                Fixed8 fee = Fixed8.Zero;
+                if (args.Length >= 5)
+                {
+                    if (!Fixed8.TryParse(args[4], out fee) || fee < Fixed8.Zero)
+                    {
+                        Console.WriteLine("Incorrect Fee Format");
+                        return true;
+                    }
+                }
+
+                tx = Program.Wallet.MakeTransaction(null, new[]
+                {
+                    new TransferOutput
+                    {
+                        AssetId = assetId,
+                        Value = amount,
+                        ScriptHash = scriptHash
+                    }
+                }, fee: fee);
+                if (tx == null)
+                {
+                    Console.WriteLine("Insufficient funds");
+                    return true;
+                }
+
+                ContractParametersContext context = new ContractParametersContext(tx);
+                Program.Wallet.Sign(context);
+                if (context.Completed)
+                {
+                    tx.Witnesses = context.GetWitnesses();
+
+                    if (tx.Size > Transaction.MaxTransactionSize)
+                    {
+                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                        return true;
+                    }
+
+                    if (tx.Size > 102400)
+                    {
+                        Fixed8 calFee = Fixed8.FromDecimal(tx.Size * 0.00001m + 0.001m);
+                        if (fee < calFee)
+                        {
+                            fee = calFee;
+                            tx = Program.Wallet.MakeTransaction(null, new[]
+                            {
+                                new TransferOutput
+                                {
+                                    AssetId = assetId,
+                                    Value = amount,
+                                    ScriptHash = scriptHash
+                                }
+                            }, fee: fee);
+                            if (tx == null)
+                            {
+                                Console.WriteLine("Insufficient funds");
+                                return true;
+                            }
+                            context = new ContractParametersContext(tx);
+                            Program.Wallet.Sign(context);
+                            tx.Witnesses = context.GetWitnesses();
+                        }
+                    }
+
+                    Program.Wallet.ApplyTransaction(tx);
+                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                    Console.WriteLine($"TXID: {tx.Hash}");
+                }
+                else
+                {
+                    Console.WriteLine("SignatureContext:");
+                    Console.WriteLine(context.ToString());
+                }
+            }
+            return true;
+        }
+
         private bool OnShowCommand(string[] args)
         {
             switch (args[1].ToLower())
@@ -1274,6 +1459,7 @@ namespace Bhp.Shell
             ExtensionSettings.Default.WalletConfig.Path = Settings.Default.UnlockWallet.Path;
             ExtensionSettings.Default.WalletConfig.AutoLock = Settings.Default.UnlockWallet.AutoLock;
             ExtensionSettings.Default.WalletConfig.Indexer = GetIndexer();
+            ExtensionSettings.Default.WalletConfig.IsBhpFee = Settings.Default.UnlockWallet.IsBhpFee;
 
             if (useRPC)
             {
