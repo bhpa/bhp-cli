@@ -3,7 +3,7 @@ using System.Reflection;
 
 namespace Bhp
 {
-    internal static class Helper
+    internal static class Extensions
     {
         internal static bool ToBool(this string input)
         {
