@@ -33,7 +33,7 @@ using ECPoint = Bhp.Cryptography.ECC.ECPoint;
 namespace Bhp.Shell
 {
     internal class MainService : ConsoleServiceBase
-    {        
+    {
         private LevelDBStore store;
         private BhpSystem system;
         private WalletIndexer indexer;
@@ -125,7 +125,7 @@ namespace Bhp.Shell
             switch (command)
             {
                 case "addr":
-                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(IPAddress.Parse(args[2]), DateTime.UtcNow.ToTimestamp(), new FullNodeCapability(), new ServerCapability(NodeCapabilityType.TcpServer, ushort.Parse(args[3]))));                    
+                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(IPAddress.Parse(args[2]), DateTime.UtcNow.ToTimestamp(), new FullNodeCapability(), new ServerCapability(NodeCapabilityType.TcpServer, ushort.Parse(args[3]))));
                     messageCommand = MessageCommand.Addr;
                     break;
                 case "block":
@@ -1092,7 +1092,7 @@ namespace Bhp.Shell
                             tx.Witnesses = context.GetWitnesses();
                         }
                     }
-                    
+
                     Program.Wallet.ApplyTransaction(tx);
                     system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
                     Console.WriteLine($"TXID: {tx.Hash}");
@@ -1102,7 +1102,7 @@ namespace Bhp.Shell
                     Console.WriteLine("SignatureContext:");
                     Console.WriteLine(context.ToString());
                 }
-            }            
+            }
             return true;
         }
 
@@ -1576,7 +1576,8 @@ namespace Bhp.Shell
         private byte[] LoadDeploymentScript(string avmFilePath, bool hasStorage, bool isPayable, out UInt160 scriptHash)
         {
             var info = new FileInfo(avmFilePath);
-            if (!info.Exists || info.Length >= Transaction.MaxTransactionSize) {
+            if (!info.Exists || info.Length >= Transaction.MaxTransactionSize)
+            {
                 throw new ArgumentException(nameof(avmFilePath));
             }
             NefFile file;
@@ -1688,10 +1689,10 @@ namespace Bhp.Shell
             var tx = new InvocationTransaction();
 
             using (ScriptBuilder scriptBuilder = new ScriptBuilder())
-            {                
+            {
                 for (int i = parameters.Length - 1; i >= 0; i--)
                     scriptBuilder.EmitPush(parameters[i]);
-                scriptBuilder.EmitPush(scriptHash.ToArray());                
+                scriptBuilder.EmitPush(scriptHash.ToArray());
                 Console.WriteLine($"Invoking script with: '{scriptBuilder.ToArray().ToHexString()}'");
                 tx.Script = scriptBuilder.ToArray();
             }
