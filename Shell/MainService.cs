@@ -273,6 +273,15 @@ namespace Bhp.Shell
                 return true;
             }
 
+            string path = "address.txt";
+            if (File.Exists(path))
+            {
+                if (!ReadUserInput($"The file '{path}' already exists, do you want to overwrite it? (yes|no)", false).IsYes())
+                {
+                    return true;
+                }
+            }
+
             ushort count;
             if (args.Length >= 3)
                 count = ushort.Parse(args[2]);
@@ -298,7 +307,6 @@ namespace Bhp.Shell
             if (Program.Wallet is BRC6Wallet wallet)
                 wallet.Save();
             Console.WriteLine();
-            string path = "address.txt";
             Console.WriteLine($"export addresses to {path}");
             File.WriteAllLines(path, addresses);
             return true;
@@ -310,6 +318,13 @@ namespace Bhp.Shell
             {
                 Console.WriteLine("error");
                 return true;
+            }
+            if (system.RpcServer != null)
+            {
+                if (!ReadUserInput("Warning: Opening the wallet with RPC turned on could result in asset loss. Are you sure you want to do this? (yes|no)", false).IsYes())
+                {
+                    return true;
+                }
             }
             string path = args[2];
             string password = ReadUserInput("password", true);
@@ -328,23 +343,25 @@ namespace Bhp.Shell
             {
                 case ".db3":
                     {
-                        Program.Wallet = UserWallet.Create(GetIndexer(), path, password);
+                        Program.Wallet = UserWallet.Create(path, password);
                         WalletAccount account = Program.Wallet.CreateAccount();
                         Console.WriteLine($"address: {account.Address}");
                         Console.WriteLine($" pubkey: {account.GetKey().PublicKey.EncodePoint(true).ToHexString()}");
-                        system.RpcServer?.OpenWallet(Program.Wallet);
+                        if (system.RpcServer != null)
+                            system.RpcServer.Wallet = Program.Wallet;
                     }
                     break;
                 case ".json":
                     {
-                        BRC6Wallet wallet = new BRC6Wallet(GetIndexer(), path);
+                        BRC6Wallet wallet = new BRC6Wallet(path);
                         wallet.Unlock(password);
                         WalletAccount account = wallet.CreateAccount();
                         wallet.Save();
                         Program.Wallet = wallet;
                         Console.WriteLine($"address: {account.Address}");
                         Console.WriteLine($" pubkey: {account.GetKey().PublicKey.EncodePoint(true).ToHexString()}");
-                        system.RpcServer?.OpenWallet(Program.Wallet);
+                        if (system.RpcServer != null)
+                            system.RpcServer.Wallet = Program.Wallet;
                     }
                     break;
                 default:
@@ -710,6 +727,22 @@ namespace Bhp.Shell
             catch (FormatException) { }
             if (prikey == null)
             {
+                var file = new FileInfo(args[2]);
+
+                if (!file.Exists)
+                {
+                    Console.WriteLine($"Error: File '{file.FullName}' doesn't exists");
+                    return true;
+                }
+
+                if (file.Length > 1024 * 1024)
+                {
+                    if (!ReadUserInput($"The file '{file.FullName}' is too big, do you want to continue? (yes|no)", false).IsYes())
+                    {
+                        return true;
+                    }
+                }
+
                 string[] lines = File.ReadAllLines(args[2]);
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -858,6 +891,13 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
+            if (system.RpcServer != null)
+            {
+                if (!ReadUserInput("Warning: Opening the wallet with RPC turned on could result in asset loss. Are you sure you want to do this? (yes|no)", false).IsYes())
+                {
+                    return true;
+                }
+            }
             string path = args[2];
             if (!File.Exists(path))
             {
@@ -872,13 +912,14 @@ namespace Bhp.Shell
             }
             try
             {
-                Program.Wallet = OpenWallet(GetIndexer(), path, password);
+                Program.Wallet = OpenWallet(path, password);
             }
             catch (CryptographicException)
             {
                 Console.WriteLine($"failed to open file \"{path}\"");
             }
-            system.RpcServer?.OpenWallet(Program.Wallet);
+            if (system.RpcServer != null)
+                system.RpcServer.Wallet = Program.Wallet;
             return true;
         }
 
@@ -1441,7 +1482,7 @@ namespace Bhp.Shell
             {
                 try
                 {
-                    Program.Wallet = OpenWallet(GetIndexer(), Settings.Default.UnlockWallet.Path, Settings.Default.UnlockWallet.Password);
+                    Program.Wallet = OpenWallet(Settings.Default.UnlockWallet.Path, Settings.Default.UnlockWallet.Password);
                 }
                 catch (CryptographicException)
                 {
@@ -1722,7 +1763,7 @@ namespace Bhp.Shell
                 Console.WriteLine("error: insufficient balance.");
                 return true;
             }
-            if (ReadUserInput("relay tx(no|yes)") != "yes")
+            if (!ReadUserInput("relay tx(no|yes)").IsYes())
             {
                 return true;
             }
@@ -1833,15 +1874,15 @@ namespace Bhp.Shell
             return true;
         }
 
-        private static Wallet OpenWallet(WalletIndexer indexer, string path, string password)
+        private static Wallet OpenWallet(string path, string password)
         {
             if (Path.GetExtension(path) == ".db3")
             {
-                return UserWallet.Open(indexer, path, password);
+                return UserWallet.Open(path, password);
             }
             else
             {
-                BRC6Wallet brc6wallet = new BRC6Wallet(indexer, path);
+                BRC6Wallet brc6wallet = new BRC6Wallet(path);
                 brc6wallet.Unlock(password);
                 return brc6wallet;
             }
