@@ -25,7 +25,7 @@
     },
     "PluginURL": "",
     "DataRPC": {
-      "Host": "https://texp.bhpa.io:7070"
+      "Host": "https://47.103.46.191:7070"
     },
     "ExportWallet": {
       "Path": "",
