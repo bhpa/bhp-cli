@@ -4,9 +4,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Security;
 using System.ServiceProcess;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Bhp.Services
 {
@@ -18,6 +21,10 @@ namespace Bhp.Services
         public abstract string ServiceName { get; }
 
         protected bool ShowPrompt { get; set; } = true;
+
+        private bool _running;
+        private readonly CancellationTokenSource _shutdownTokenSource = new CancellationTokenSource();
+        private readonly CountdownEvent _shutdownAcknowledged = new CountdownEvent(1);
 
         protected virtual bool OnCommand(string[] args)
         {
@@ -37,6 +44,26 @@ namespace Bhp.Services
                     Console.WriteLine("error: command not found " + args[0]);
                     return true;
             }
+        }
+
+        private void TriggerGracefulShutdown()
+        {
+            if (!_running) return;
+            _running = false;
+            _shutdownTokenSource.Cancel();
+            // Wait for us to have triggered shutdown.
+            _shutdownAcknowledged.Wait();
+        }
+
+        private void SigTermEventHandler(AssemblyLoadContext obj)
+        {
+            TriggerGracefulShutdown();
+        }
+
+        private void CancelHandler(object sender, ConsoleCancelEventArgs e)
+        {
+            e.Cancel = true;
+            TriggerGracefulShutdown();
         }
 
         protected internal abstract void OnStart(string[] args);
@@ -259,6 +286,7 @@ namespace Bhp.Services
                     OnStart(args);
                     RunConsole();
                     OnStop();
+                    _shutdownAcknowledged.Signal();
                 }
             }
             else
@@ -267,8 +295,28 @@ namespace Bhp.Services
             }
         }
 
+        protected string ReadLine()
+        {
+            Task<string> readLineTask = Task.Run(() => Console.ReadLine());
+            try
+            {
+                readLineTask.Wait(_shutdownTokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+
+            return readLineTask.Result;
+        }
+
         private void RunConsole()
         {
+            _running = true;
+            // Register sigterm event handler
+            AssemblyLoadContext.Default.Unloading += SigTermEventHandler;
+            // Register sigint event handler
+            Console.CancelKeyPress += CancelHandler;
             bool running = true;
             string[] emptyarg = new string[] { "" };
             if (Environment.OSVersion.Platform == PlatformID.Win32NT)
@@ -278,7 +326,7 @@ namespace Bhp.Services
             Console.WriteLine($"{ServiceName} Version: {Assembly.GetEntryAssembly().GetVersion()}");
             Console.WriteLine();
 
-            while (running)
+            while (_running)
             {
                 if (ShowPrompt)
                 {
@@ -287,7 +335,7 @@ namespace Bhp.Services
                 }
 
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                string line = Console.ReadLine()?.Trim();
+                string line = ReadLine()?.Trim();
                 if (line == null) break;
                 Console.ForegroundColor = ConsoleColor.White;
 
@@ -296,7 +344,7 @@ namespace Bhp.Services
                     string[] args = ParseCommandLine(line);
                     if (args.Length == 0)
                         args = emptyarg;
-                    running = OnCommand(args);
+                    _running = OnCommand(args);
                 }
                 catch (Exception ex)
                 {
