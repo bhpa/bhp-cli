@@ -12,6 +12,7 @@ using Bhp.Persistence.LevelDB;
 using Bhp.Plugins;
 using Bhp.Services;
 using Bhp.SmartContract;
+using Bhp.SmartContract.Manifest;
 using Bhp.VM;
 using Bhp.Wallets;
 using Bhp.Wallets.BRC6;
@@ -636,7 +637,7 @@ namespace Bhp.Shell
                 "\tsend <id|alias> <address> <value>|all [fee=0]\n" +
                 "\tsign <jsonObjectToSign>\n" +
                  "Contract Commands:\n" +
-                "\tdeploy <avmFilePath> <paramTypes> <returnTypeHexString> <hasStorage (true|false)> <hasDynamicInvoke (true|false)> <isPayable (true|false) <contractName> <contractVersion> <contractAuthor> <contractEmail> <contractDescription>\n" +
+                "\tdeploy <nefFilePath> [manifestFile]\n" +
                 "\tinvoke <scripthash> <command> [optionally quoted params separated by space]\n" +
                 "Node Commands:\n" +
                 "\tshow state\n" +
@@ -1590,10 +1591,9 @@ namespace Bhp.Shell
         {
             if (NoWallet()) return true;
             byte[] script = LoadDeploymentScript(
-                /* filePath */ args[1],
-                /* hasStorage */ args[2].ToBool(),
-                /* isPayable */ args[3].ToBool(),
-                /* scriptHash */ out var scriptHash);
+               /* filePath */ args[1],
+               /* manifest */ args.Length == 2 ? "" : args[2],
+               /* scriptHash */ out var scriptHash);
 
             Transaction tx = new Transaction { Script = script };
             try
@@ -1614,25 +1614,76 @@ namespace Bhp.Shell
             return SignAndSendTx(tx);
         }
 
-        private byte[] LoadDeploymentScript(string avmFilePath, bool hasStorage, bool isPayable, out UInt160 scriptHash)
+        private byte[] LoadDeploymentScript(string nefFilePath, string manifestFilePath, out UInt160 scriptHash)
         {
-            var info = new FileInfo(avmFilePath);
+            if (string.IsNullOrEmpty(manifestFilePath))
+            {
+                manifestFilePath = Path.ChangeExtension(nefFilePath, ".manifest.json");
+            }
+
+            // Read manifest
+
+            var info = new FileInfo(manifestFilePath);
             if (!info.Exists || info.Length >= Transaction.MaxTransactionSize)
             {
-                throw new ArgumentException(nameof(avmFilePath));
+                throw new ArgumentException(nameof(manifestFilePath));
+            }
+
+            var manifest = ContractManifest.Parse(File.ReadAllText(manifestFilePath));
+
+            // Read nef
+
+            info = new FileInfo(nefFilePath);
+            if (!info.Exists || info.Length >= Transaction.MaxTransactionSize)
+            {
+                throw new ArgumentException(nameof(manifestFilePath));
             }
             NefFile file;
-            using (var stream = new BinaryReader(File.OpenRead(avmFilePath), Encoding.UTF8, false))
+            using (var stream = new BinaryReader(File.OpenRead(manifestFilePath), Encoding.UTF8, false))
             {
                 file = stream.ReadSerializable<NefFile>();
             }
+            // Basic script checks
+
+            using (var engine = new ApplicationEngine(TriggerType.Application, null, null, 0, true))
+            {
+                var context = engine.LoadScript(file.Script);
+
+                while (context.InstructionPointer <= context.Script.Length)
+                {
+                    // Check bad opcodes
+
+                    var ci = context.CurrentInstruction;
+
+                    if (ci == null || !Enum.IsDefined(typeof(OpCode), ci.OpCode))
+                    {
+                        throw new FormatException($"OpCode not found at {context.InstructionPointer}-{((byte)ci.OpCode).ToString("x2")}");
+                    }
+
+                    switch (ci.OpCode)
+                    {
+                        case OpCode.SYSCALL:
+                            {
+                                // Check bad syscalls (BHP2)
+
+                                if (!InteropService.SupportedMethods().ContainsKey(ci.TokenU32))
+                                {
+                                    throw new FormatException($"Syscall not found {ci.TokenU32.ToString("x2")}. Are you using a BHP2 smartContract?");
+                                }
+                                break;
+                            }
+                    }
+
+                    context.InstructionPointer += ci.Size;
+                }
+            }
+
+            // Build script
+
             scriptHash = file.ScriptHash;
-            ContractPropertyState properties = ContractPropertyState.NoProperty;
-            if (hasStorage) properties |= ContractPropertyState.HasStorage;
-            if (isPayable) properties |= ContractPropertyState.Payable;
             using (ScriptBuilder sb = new ScriptBuilder())
             {
-                sb.EmitSysCall(InteropService.Bhp_Contract_Create, file.Script, properties);
+                sb.EmitSysCall(InteropService.Bhp_Contract_Create, file.Script, manifest.ToJson().ToString());
                 return sb.ToArray();
             }
         }
