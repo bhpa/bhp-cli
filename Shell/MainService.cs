@@ -27,6 +27,7 @@ using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using ECCurve = Bhp.Cryptography.ECC.ECCurve;
 using ECPoint = Bhp.Cryptography.ECC.ECPoint;
@@ -1365,35 +1366,49 @@ namespace Bhp.Shell
         /*
         private bool OnShowStateCommand(string[] args)
         {
-            bool stop = false;
+            var cancel = new CancellationTokenSource();
+
             Console.CursorVisible = false;
             Console.Clear();
+            Task broadcast = Task.Run(async () =>
+            {
+                while (!cancel.Token.IsCancellationRequested)
+                {
+                    system.LocalNode.Tell(Message.Create(MessageCommand.Ping, PingPayload.Create(Blockchain.Singleton.Height)));
+                    await Task.Delay(Blockchain.TimePerBlock, cancel.Token);
+                }
+            });
             Task task = Task.Run(async () =>
             {
-                while (!stop)
+                int maxLines = 0;
+
+                while (!cancel.Token.IsCancellationRequested)
                 {
                     Console.SetCursorPosition(0, 0);
-                    uint wh = 0;
-                    if (Program.Wallet != null)
-                        wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
+                    WriteLineWithoutFlicker($"block: {Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}", Console.WindowWidth - 1);
 
-                    WriteLineWithoutFlicker($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
                     int linesWritten = 1;
-                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2).ToArray())
+                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().OrderByDescending(u => u.LastBlockIndex).Take(Console.WindowHeight - 2).ToArray())
                     {
-                        WriteLineWithoutFlicker(
-                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerTcpPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex}");
+                        Console.WriteLine(
+                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerTcpPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex.ToString().PadRight(7)}");
                         linesWritten++;
                     }
 
-                    while (++linesWritten < Console.WindowHeight)
-                        WriteLineWithoutFlicker();
-                    await Task.Delay(500);
+                    maxLines = Math.Max(maxLines, linesWritten);
+
+                    while (linesWritten < maxLines)
+                    {
+                        WriteLineWithoutFlicker("", Console.WindowWidth - 1);
+                        maxLines--;
+                    }
+
+                    await Task.Delay(500, cancel.Token);
                 }
             });
             Console.ReadLine();
-            stop = true;
-            task.Wait();
+            cancel.Cancel();
+            try { Task.WaitAll(task, broadcast); } catch { }
             Console.WriteLine();
             Console.CursorVisible = true;
             return true;
@@ -1402,14 +1417,51 @@ namespace Bhp.Shell
 
         private bool OnShowStateCommand(string[] args)
         {
-            uint wh = 0;
-            if (Program.Wallet != null)
-                wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
-            Console.WriteLine("------------------------------RemoteNode List------------------------------");
-            Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
-            foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                Console.WriteLine($"  ip: {node.Remote.Address.ToString().PadRight(5)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerTcpPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex}");
-            Console.WriteLine("---------------------------------------------------------------------------");
+            var cancel = new CancellationTokenSource();
+
+            Console.CursorVisible = false;
+            Console.Clear();
+            Task broadcast = Task.Run(async () =>
+            {
+                while (!cancel.Token.IsCancellationRequested)
+                {
+                    system.LocalNode.Tell(Message.Create(MessageCommand.Ping, PingPayload.Create(Blockchain.Singleton.Height)));
+                    await Task.Delay(Blockchain.TimePerBlock, cancel.Token);
+                }
+            });
+            Task task = Task.Run(async () =>
+            {
+                int maxLines = 0;
+
+                while (!cancel.Token.IsCancellationRequested)
+                {
+                    Console.SetCursorPosition(0, 0);
+                    WriteLineWithoutFlicker($"block: {Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}", Console.WindowWidth - 1);
+
+                    int linesWritten = 1;
+                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().OrderByDescending(u => u.LastBlockIndex).Take(Console.WindowHeight - 2).ToArray())
+                    {
+                        Console.WriteLine(
+                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerTcpPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex.ToString().PadRight(7)}");
+                        linesWritten++;
+                    }
+
+                    maxLines = Math.Max(maxLines, linesWritten);
+
+                    while (linesWritten < maxLines)
+                    {
+                        WriteLineWithoutFlicker("", Console.WindowWidth - 1);
+                        maxLines--;
+                    }
+
+                    await Task.Delay(500, cancel.Token);
+                }
+            });
+            Console.ReadLine();
+            cancel.Cancel();
+            try { Task.WaitAll(task, broadcast); } catch { }
+            Console.WriteLine();
+            Console.CursorVisible = true;
             return true;
         }
 
