@@ -24,7 +24,7 @@ namespace Bhp.Shell
 
         public Fixed8 UnavailableBonus()
         {
-            using (Snapshot snapshot = Blockchain.Singleton.GetSnapshot())
+            using (StoreView snapshot = Blockchain.Singleton.GetSnapshot())
             {
                 uint height = snapshot.Height + 1;
                 Fixed8 unavailable;
@@ -45,7 +45,7 @@ namespace Bhp.Shell
 
         public Fixed8 AvailableBonus()
         {
-            using (Snapshot snapshot = Blockchain.Singleton.GetSnapshot())
+            using (StoreView snapshot = Blockchain.Singleton.GetSnapshot())
             {
                 return snapshot.CalculateBonus(current_wallet.GetUnclaimedCoins().Select(p => p.Reference));
             }
@@ -63,7 +63,7 @@ namespace Bhp.Shell
             CoinReference[] claims = current_wallet.GetUnclaimedCoins().Select(p => p.Reference).ToArray();
             if (claims.Length == 0) return null;
 
-            using (Snapshot snapshot = Blockchain.Singleton.GetSnapshot())
+            using (StoreView snapshot = Blockchain.Singleton.GetSnapshot())
             {
                 ClaimTransaction tx = new ClaimTransaction
                 {
@@ -96,7 +96,7 @@ namespace Bhp.Shell
             CoinReference[] claims = current_wallet.GetUnclaimedCoins().Select(p => p.Reference).ToArray();
             if (claims.Length == 0) return null;
 
-            using (Snapshot snapshot = Blockchain.Singleton.GetSnapshot())
+            using (StoreView snapshot = Blockchain.Singleton.GetSnapshot())
             {
                 int claim_count = (claims.Length - 1) / MAX_CLAIMS_AMOUNT + 1;
                 List<ClaimTransaction> txs = new List<ClaimTransaction>();
