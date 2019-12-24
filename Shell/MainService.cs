@@ -1,5 +1,6 @@
 ﻿using Akka.Actor;
 using Bhp.BhpExtensions;
+using Bhp.BhpExtensions.RPC;
 using Bhp.Consensus;
 using Bhp.IO;
 using Bhp.IO.Json;
@@ -335,6 +336,11 @@ namespace Bhp.Shell
                 Console.WriteLine("cancelled");
                 return true;
             }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
+                return true;
+            }
             string password2 = ReadUserInput("password", true);
             if (password != password2)
             {
@@ -499,6 +505,11 @@ namespace Bhp.Shell
                 Console.WriteLine("cancelled");
                 return true;
             }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
+                return true;
+            }
             if (!Program.Wallet.VerifyPassword(password))
             {
                 Console.WriteLine("Incorrect password");
@@ -535,6 +546,11 @@ namespace Bhp.Shell
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
+                return true;
+            }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
                 return true;
             }
             if (!Program.Wallet.VerifyPassword(password))
@@ -805,6 +821,11 @@ namespace Bhp.Shell
                     Console.WriteLine("cancelled");
                     return true;
                 }
+                if (!RpcExtension.VerifyPW(password))
+                {
+                    Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
+                    return true;
+                }
                 if (!Program.Wallet.VerifyPassword(password))
                 {
                     Console.WriteLine("Incorrect password");
@@ -912,6 +933,11 @@ namespace Bhp.Shell
                 Console.WriteLine("cancelled");
                 return true;
             }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
+                return true;
+            }
             try
             {
                 Program.Wallet = OpenWallet(path, password);
@@ -993,6 +1019,11 @@ namespace Bhp.Shell
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
+                return true;
+            }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
                 return true;
             }
             if (!Program.Wallet.VerifyPassword(password))
@@ -1161,6 +1192,11 @@ namespace Bhp.Shell
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
+                return true;
+            }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
                 return true;
             }
             if (!Program.Wallet.VerifyPassword(password))
@@ -1973,6 +2009,11 @@ namespace Bhp.Shell
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
+                return true;
+            }
+            if (!RpcExtension.VerifyPW(password))
+            {
+                Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
                 return true;
             }
             string path_new = Path.ChangeExtension(path, ".json");
