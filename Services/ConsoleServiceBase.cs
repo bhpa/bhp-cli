@@ -1,15 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Reflection;
-using System.Runtime.Loader;
 using System.Security;
 using System.ServiceProcess;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Bhp.Services
 {
@@ -22,23 +17,17 @@ namespace Bhp.Services
 
         protected bool ShowPrompt { get; set; } = true;
 
-        private bool _running;
-        private readonly CancellationTokenSource _shutdownTokenSource = new CancellationTokenSource();
-        private readonly CountdownEvent _shutdownAcknowledged = new CountdownEvent(1);
-
         protected virtual bool OnCommand(string[] args)
         {
             switch (args[0].ToLower())
             {
-                case "":
-                    return true;
                 case "clear":
                     Console.Clear();
                     return true;
                 case "exit":
                     return false;
                 case "version":
-                    Console.WriteLine(Assembly.GetEntryAssembly().GetVersion());
+                    Console.WriteLine(Assembly.GetEntryAssembly().GetName().Version);
                     return true;
                 default:
                     Console.WriteLine("error: command not found " + args[0]);
@@ -46,127 +35,11 @@ namespace Bhp.Services
             }
         }
 
-        private void TriggerGracefulShutdown()
-        {
-            if (!_running) return;
-            _running = false;
-            _shutdownTokenSource.Cancel();
-            // Wait for us to have triggered shutdown.
-            _shutdownAcknowledged.Wait();
-        }
-
-        private void SigTermEventHandler(AssemblyLoadContext obj)
-        {
-            TriggerGracefulShutdown();
-        }
-
-        private void CancelHandler(object sender, ConsoleCancelEventArgs e)
-        {
-            e.Cancel = true;
-            TriggerGracefulShutdown();
-        }
-
         protected internal abstract void OnStart(string[] args);
 
         protected internal abstract void OnStop();
 
-        private static string[] ParseCommandLine(string line)
-        {
-            List<string> outputArgs = new List<string>();
-            using (StringReader reader = new StringReader(line))
-            {
-                while (true)
-                {
-                    switch (reader.Peek())
-                    {
-                        case -1:
-                            return outputArgs.ToArray();
-                        case ' ':
-                            reader.Read();
-                            break;
-                        case '\"':
-                            outputArgs.Add(ParseCommandLineString(reader));
-                            break;
-                        default:
-                            outputArgs.Add(ParseCommandLineArgument(reader));
-                            break;
-                    }
-                }
-            }
-        }
-
-        private static string ParseCommandLineArgument(TextReader reader)
-        {
-            StringBuilder sb = new StringBuilder();
-            while (true)
-            {
-                int c = reader.Read();
-                switch (c)
-                {
-                    case -1:
-                    case ' ':
-                        return sb.ToString();
-                    default:
-                        sb.Append((char)c);
-                        break;
-                }
-            }
-        }
-
-        private static string ParseCommandLineString(TextReader reader)
-        {
-            if (reader.Read() != '\"') throw new FormatException();
-            StringBuilder sb = new StringBuilder();
-            while (true)
-            {
-                int c = reader.Peek();
-                switch (c)
-                {
-                    case '\"':
-                        reader.Read();
-                        return sb.ToString();
-                    case '\\':
-                        sb.Append(ParseEscapeCharacter(reader));
-                        break;
-                    default:
-                        reader.Read();
-                        sb.Append((char)c);
-                        break;
-                }
-            }
-        }
-
-        private static char ParseEscapeCharacter(TextReader reader)
-        {
-            if (reader.Read() != '\\') throw new FormatException();
-            int c = reader.Read();
-            switch (c)
-            {
-                case -1:
-                    throw new FormatException();
-                case 'n':
-                    return '\n';
-                case 'r':
-                    return '\r';
-                case 't':
-                    return '\t';
-                case 'x':
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < 2; i++)
-                    {
-                        int h = reader.Read();
-                        if (h >= '0' && h <= '9' || h >= 'A' && h <= 'F' || h >= 'a' && h <= 'f')
-                            sb.Append((char)h);
-                        else
-                            throw new FormatException();
-                    }
-                    return (char)byte.Parse(sb.ToString(), NumberStyles.AllowHexSpecifier);
-                default:
-                    return (char)c;
-            }
-        }
-
-        public static string ReadUserInput(string prompt, bool password = false)
+        public static string ReadPassword(string prompt)
         {
             const string t = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
             StringBuilder sb = new StringBuilder();
@@ -182,14 +55,7 @@ namespace Bhp.Services
                 if (t.IndexOf(key.KeyChar) != -1)
                 {
                     sb.Append(key.KeyChar);
-                    if (password)
-                    {
-                        Console.Write('*');
-                    }
-                    else
-                    {
-                        Console.Write(key.KeyChar);
-                    }
+                    Console.Write('*');
                 }
                 else if (key.Key == ConsoleKey.Backspace && sb.Length > 0)
                 {
@@ -286,7 +152,6 @@ namespace Bhp.Services
                     OnStart(args);
                     RunConsole();
                     OnStop();
-                    _shutdownAcknowledged.Signal();
                 }
             }
             else
@@ -295,38 +160,18 @@ namespace Bhp.Services
             }
         }
 
-        protected string ReadLine()
-        {
-            Task<string> readLineTask = Task.Run(() => Console.ReadLine());
-            try
-            {
-                readLineTask.Wait(_shutdownTokenSource.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return null;
-            }
-
-            return readLineTask.Result;
-        }
-
         private void RunConsole()
         {
-            _running = true;
-            // Register sigterm event handler
-            AssemblyLoadContext.Default.Unloading += SigTermEventHandler;
-            // Register sigint event handler
-            Console.CancelKeyPress += CancelHandler;
             bool running = true;
-            string[] emptyarg = new string[] { "" };
-            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
-                Console.Title = ServiceName;
+            Console.Title = ServiceName;
             Console.OutputEncoding = Encoding.Unicode;
 
-            Console.WriteLine($"{ServiceName} Version: {Assembly.GetEntryAssembly().GetVersion()}");
+            Console.ForegroundColor = ConsoleColor.DarkGreen;
+            Version ver = Assembly.GetEntryAssembly().GetName().Version;
+            Console.WriteLine($"{ServiceName} Version: {ver}");
             Console.WriteLine();
 
-            while (_running)
+            while (running)
             {
                 if (ShowPrompt)
                 {
@@ -335,20 +180,23 @@ namespace Bhp.Services
                 }
 
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                string line = ReadLine()?.Trim();
+                string line = Console.ReadLine()?.Trim();
                 if (line == null) break;
                 Console.ForegroundColor = ConsoleColor.White;
-
+                string[] args = line.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (args.Length == 0)
+                    continue;
                 try
                 {
-                    string[] args = ParseCommandLine(line);
-                    if (args.Length == 0)
-                        args = emptyarg;
-                    _running = OnCommand(args);
+                    running = OnCommand(args);
                 }
                 catch (Exception ex)
                 {
+#if DEBUG
                     Console.WriteLine($"error: {ex.Message}");
+#else
+                    Console.WriteLine("error");
+#endif
                 }
             }
 
