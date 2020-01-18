@@ -3,22 +3,17 @@ using Bhp.BhpExtensions;
 using Bhp.BhpExtensions.RPC;
 using Bhp.Consensus;
 using Bhp.IO;
-using Bhp.IO.Json;
 using Bhp.Ledger;
 using Bhp.Network.P2P;
-using Bhp.Network.P2P.Capabilities;
 using Bhp.Network.P2P.Payloads;
 using Bhp.Persistence;
 using Bhp.Persistence.LevelDB;
 using Bhp.Plugins;
 using Bhp.Services;
 using Bhp.SmartContract;
-using Bhp.SmartContract.Manifest;
-using Bhp.VM;
 using Bhp.Wallets;
 using Bhp.Wallets.BRC6;
 using Bhp.Wallets.SQLite;
-using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,7 +22,6 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ECCurve = Bhp.Cryptography.ECC.ECCurve;
@@ -37,6 +31,8 @@ namespace Bhp.Shell
 {
     internal class MainService : ConsoleServiceBase
     {
+        private const string PeerStatePath = "peers.dat";
+
         private LevelDBStore store;
         private BhpSystem system;
         private WalletIndexer indexer;
@@ -88,8 +84,6 @@ namespace Bhp.Shell
                     return OnClaimCommand(args);
                 case "open":
                     return OnOpenCommand(args);
-                case "close":
-                    return OnCloseCommand(args);
                 case "rebuild":
                     return OnRebuildCommand(args);
                 case "send":
@@ -107,10 +101,6 @@ namespace Bhp.Shell
                     return OnStartCommand(args);
                 case "upgrade":
                     return OnUpgradeCommand(args);
-                case "deploy":
-                    return OnDeployCommand(args);
-                case "invoke":
-                    return OnInvokeCommand(args);
                 case "install":
                     return OnInstallCommand(args);
                 case "uninstall":
@@ -124,45 +114,43 @@ namespace Bhp.Shell
         {
             string command = args[1].ToLower();
             ISerializable payload = null;
-            MessageCommand messageCommand;
             switch (command)
             {
                 case "addr":
-                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(IPAddress.Parse(args[2]), DateTime.UtcNow.ToTimestamp(), new FullNodeCapability(), new ServerCapability(NodeCapabilityType.TcpServer, ushort.Parse(args[3]))));
-                    messageCommand = MessageCommand.Addr;
+                    payload = AddrPayload.Create(NetworkAddressWithTime.Create(new IPEndPoint(IPAddress.Parse(args[2]), ushort.Parse(args[3])), NetworkAddressWithTime.NODE_NETWORK, DateTime.UtcNow.ToTimestamp()));
                     break;
                 case "block":
                     if (args[2].Length == 64 || args[2].Length == 66)
                         payload = Blockchain.Singleton.GetBlock(UInt256.Parse(args[2]));
                     else
                         payload = Blockchain.Singleton.Store.GetBlock(uint.Parse(args[2]));
-                    messageCommand = MessageCommand.Block;
                     break;
                 case "getblocks":
-                    payload = GetBlocksPayload.Create(UInt256.Parse(args[2]));
-                    messageCommand = MessageCommand.GetBlocks;
-                    break;
                 case "getheaders":
                     payload = GetBlocksPayload.Create(UInt256.Parse(args[2]));
-                    messageCommand = MessageCommand.GetHeaders;
                     break;
                 case "getdata":
-                    payload = InvPayload.Create(Enum.Parse<InventoryType>(args[2], true), args.Skip(3).Select(UInt256.Parse).ToArray());
-                    messageCommand = MessageCommand.GetData;
-                    break;
                 case "inv":
                     payload = InvPayload.Create(Enum.Parse<InventoryType>(args[2], true), args.Skip(3).Select(UInt256.Parse).ToArray());
-                    messageCommand = MessageCommand.Inv;
                     break;
                 case "tx":
                     payload = Blockchain.Singleton.GetTransaction(UInt256.Parse(args[2]));
-                    messageCommand = MessageCommand.Transaction;
                     break;
-                default:
+                case "alert":
+                case "consensus":
+                case "filteradd":
+                case "filterload":
+                case "headers":
+                case "merkleblock":
+                case "ping":
+                case "pong":
+                case "reject":
+                case "verack":
+                case "version":
                     Console.WriteLine($"Command \"{command}\" is not supported.");
                     return true;
             }
-            system.LocalNode.Tell(Message.Create(messageCommand, payload));
+            system.LocalNode.Tell(Message.Create(command, payload));
             return true;
         }
 
@@ -193,8 +181,9 @@ namespace Bhp.Shell
                     return true;
                 }
                 tx.Witnesses = context.GetWitnesses();
-                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-                Console.WriteLine($"Data relay success, the hash is shown as follows:\r\n{tx.Hash}");
+                IInventory inventory = (IInventory)context.Verifiable;
+                system.LocalNode.Tell(new LocalNode.Relay { Inventory = inventory });
+                Console.WriteLine($"Data relay success, the hash is shown as follows:\r\n{inventory.Hash}");
             }
             catch (Exception e)
             {
@@ -276,15 +265,6 @@ namespace Bhp.Shell
                 return true;
             }
 
-            string path = "address.txt";
-            if (File.Exists(path))
-            {
-                if (!ReadUserInput($"The file '{path}' already exists, do you want to overwrite it? (yes|no)", false).IsYes())
-                {
-                    return true;
-                }
-            }
-
             ushort count;
             if (args.Length >= 3)
                 count = ushort.Parse(args[2]);
@@ -310,6 +290,7 @@ namespace Bhp.Shell
             if (Program.Wallet is BRC6Wallet wallet)
                 wallet.Save();
             Console.WriteLine();
+            string path = $"address{DateTime.Now.ToString("yyyyMMddHHmmssfff")}.txt";
             Console.WriteLine($"export addresses to {path}");
             File.WriteAllLines(path, addresses);
             return true;
@@ -322,15 +303,8 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
-            if (system.RpcServer != null)
-            {
-                if (!ReadUserInput("Warning: Opening the wallet with RPC turned on could result in asset loss. Are you sure you want to do this? (yes|no)", false).IsYes())
-                {
-                    return true;
-                }
-            }
             string path = args[2];
-            string password = ReadUserInput("password", true);
+            string password = ReadPassword("password");
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -341,7 +315,7 @@ namespace Bhp.Shell
                 Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
                 return true;
             }
-            string password2 = ReadUserInput("password", true);
+            string password2 = ReadPassword("password");
             if (password != password2)
             {
                 Console.WriteLine("error");
@@ -351,25 +325,23 @@ namespace Bhp.Shell
             {
                 case ".db3":
                     {
-                        Program.Wallet = UserWallet.Create(path, password);
+                        Program.Wallet = UserWallet.Create(GetIndexer(), path, password);
                         WalletAccount account = Program.Wallet.CreateAccount();
                         Console.WriteLine($"address: {account.Address}");
                         Console.WriteLine($" pubkey: {account.GetKey().PublicKey.EncodePoint(true).ToHexString()}");
-                        if (system.RpcServer != null)
-                            system.RpcServer.Wallet = Program.Wallet;
+                        system.RpcServer?.OpenWallet(Program.Wallet);
                     }
                     break;
                 case ".json":
                     {
-                        BRC6Wallet wallet = new BRC6Wallet(path);
+                        BRC6Wallet wallet = new BRC6Wallet(GetIndexer(), path);
                         wallet.Unlock(password);
                         WalletAccount account = wallet.CreateAccount();
                         wallet.Save();
                         Program.Wallet = wallet;
                         Console.WriteLine($"address: {account.Address}");
                         Console.WriteLine($" pubkey: {account.GetKey().PublicKey.EncodePoint(true).ToHexString()}");
-                        if (system.RpcServer != null)
-                            system.RpcServer.Wallet = Program.Wallet;
+                        system.RpcServer?.OpenWallet(Program.Wallet);
                     }
                     break;
                 default:
@@ -499,7 +471,14 @@ namespace Bhp.Shell
                 scriptHash = args[2].ToScriptHash();
                 path = args[3];
             }
-            string password = ReadUserInput("password", true);
+
+            if (path != null && File.Exists(path))
+            {
+                Console.WriteLine("file is exist");
+                return true;
+            }
+
+            string password = ReadPassword("password");
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -536,12 +515,14 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
+
             string path = args[2];
             if (File.Exists(path))
             {
                 Console.WriteLine("file is exist");
                 return true;
             }
+
             string password = ReadPassword("password");
             if (password.Length == 0)
             {
@@ -594,38 +575,6 @@ namespace Bhp.Shell
             return true;
         }
 
-        public static string ReadPassword(string prompt)
-        {
-            const string t = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
-            StringBuilder sb = new StringBuilder();
-            ConsoleKeyInfo key;
-            Console.Write(prompt);
-            Console.Write(": ");
-
-            Console.ForegroundColor = ConsoleColor.Yellow;
-
-            do
-            {
-                key = Console.ReadKey(true);
-                if (t.IndexOf(key.KeyChar) != -1)
-                {
-                    sb.Append(key.KeyChar);
-                    Console.Write('*');
-                }
-                else if (key.Key == ConsoleKey.Backspace && sb.Length > 0)
-                {
-                    sb.Length--;
-                    Console.Write(key.KeyChar);
-                    Console.Write(' ');
-                    Console.Write(key.KeyChar);
-                }
-            } while (key.Key != ConsoleKey.Enter);
-
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine();
-            return sb.ToString();
-        }
-
         private bool OnHelpCommand(string[] args)
         {
             Console.Write(
@@ -637,7 +586,6 @@ namespace Bhp.Shell
                 "Wallet Commands:\n" +
                 "\tcreate wallet <path>\n" +
                 "\topen wallet <path>\n" +
-                "\tclose wallet \n" +
                 "\tupgrade wallet <path>\n" +
                 "\trebuild index\n" +
                 "\tlist address\n" +
@@ -653,9 +601,6 @@ namespace Bhp.Shell
                 "\timport multisigaddress m pubkeys...\n" +
                 "\tsend <id|alias> <address> <value>|all [fee=0]\n" +
                 "\tsign <jsonObjectToSign>\n" +
-                 "Contract Commands:\n" +
-                "\tdeploy <nefFilePath> [manifestFile]\n" +
-                "\tinvoke <scripthash> <command> [optionally quoted params separated by space]\n" +
                 "Node Commands:\n" +
                 "\tshow state\n" +
                 "\tshow pool [verbose]\n" +
@@ -666,7 +611,6 @@ namespace Bhp.Shell
                 "\tuninstall <pluginName>\n" +
                 "Advanced Commands:\n" +
                 "\tstart consensus\n");
-
             return true;
         }
 
@@ -701,9 +645,9 @@ namespace Bhp.Shell
         {
             if (NoWallet()) return true;
 
-            if (args.Length < 4)
+            if (args.Length < 5)
             {
-                Console.WriteLine("Error. Invalid parameters.");
+                Console.WriteLine("Error. Use at least 2 public keys to create a multisig address.");
                 return true;
             }
 
@@ -745,22 +689,6 @@ namespace Bhp.Shell
             catch (FormatException) { }
             if (prikey == null)
             {
-                var file = new FileInfo(args[2]);
-
-                if (!file.Exists)
-                {
-                    Console.WriteLine($"Error: File '{file.FullName}' doesn't exists");
-                    return true;
-                }
-
-                if (file.Length > 1024 * 1024)
-                {
-                    if (!ReadUserInput($"The file '{file.FullName}' is too big, do you want to continue? (yes|no)", false).IsYes())
-                    {
-                        return true;
-                    }
-                }
-
                 string[] lines = File.ReadAllLines(args[2]);
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -815,7 +743,7 @@ namespace Bhp.Shell
 
             if (useChangeAddress)
             {
-                string password = ReadUserInput("password", true);
+                string password = ReadPassword("password");
                 if (password.Length == 0)
                 {
                     Console.WriteLine("cancelled");
@@ -914,20 +842,13 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
-            if (system.RpcServer != null)
-            {
-                if (!ReadUserInput("Warning: Opening the wallet with RPC turned on could result in asset loss. Are you sure you want to do this? (yes|no)", false).IsYes())
-                {
-                    return true;
-                }
-            }
             string path = args[2];
             if (!File.Exists(path))
             {
                 Console.WriteLine($"File does not exist");
                 return true;
             }
-            string password = ReadUserInput("password", true);
+            string password = ReadPassword("password");
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -940,53 +861,13 @@ namespace Bhp.Shell
             }
             try
             {
-                Program.Wallet = OpenWallet(path, password);
+                Program.Wallet = OpenWallet(GetIndexer(), path, password);
             }
             catch (CryptographicException)
             {
                 Console.WriteLine($"failed to open file \"{path}\"");
             }
-            if (system.RpcServer != null)
-                system.RpcServer.Wallet = Program.Wallet;
-            return true;
-        }
-
-        /// <summary>
-        /// process "close" command
-        /// </summary>
-        /// <param name="args"></param>
-        /// <returns></returns>
-        private bool OnCloseCommand(string[] args)
-        {
-            switch (args[1].ToLower())
-            {
-                case "wallet":
-                    return OnCloseWalletCommand(args);
-                default:
-                    return base.OnCommand(args);
-            }
-        }
-
-        /// <summary>
-        /// process "close wallet" command
-        /// </summary>
-        /// <param name="args"></param>
-        /// <returns></returns>
-        private bool OnCloseWalletCommand(string[] args)
-        {
-            if (Program.Wallet == null)
-            {
-                Console.WriteLine($"Wallet is not opened");
-                return true;
-            }
-
-            Program.Wallet.Dispose();
-            Program.Wallet = null;
-            if (system.RpcServer != null)
-            {
-                system.RpcServer.Wallet = null;
-            }
-            Console.WriteLine($"Wallet is closed");
+            system.RpcServer?.OpenWallet(Program.Wallet);
             return true;
         }
 
@@ -1015,7 +896,7 @@ namespace Bhp.Shell
                 return true;
             }
             if (NoWallet()) return true;
-            string password = ReadUserInput("password", true);
+            string password = ReadPassword("password");
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -1073,47 +954,16 @@ namespace Bhp.Shell
                         return true;
                     }
                 }
-                ContractParametersContext context = new ContractParametersContext(tx);
-                Program.Wallet.Sign(context);
-                if (context.Completed)
-                {
-                    tx.Witnesses = context.GetWitnesses();
-
-                    if (tx.Size > Transaction.MaxTransactionSize)
-                    {
-                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
-                        return true;
-                    }
-
-                    Program.Wallet.ApplyTransaction(tx);
-                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-                    Console.WriteLine($"TXID: {tx.Hash}");
-                }
-                else
-                {
-                    Console.WriteLine("SignatureContext:");
-                    Console.WriteLine(context.ToString());
-                }
             }
             else
             {
                 AssetDescriptor descriptor = new AssetDescriptor(assetId);
-                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount) || amount.Sign <= 0)
+                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount))
                 {
                     Console.WriteLine("Incorrect Amount Format");
                     return true;
                 }
-
-                Fixed8 fee = Fixed8.Zero;
-                if (args.Length >= 5)
-                {
-                    if (!Fixed8.TryParse(args[4], out fee) || fee < Fixed8.Zero)
-                    {
-                        Console.WriteLine("Incorrect Fee Format");
-                        return true;
-                    }
-                }
-
+                Fixed8 fee = args.Length >= 5 ? Fixed8.Parse(args[4]) : Fixed8.Zero;
                 tx = Program.Wallet.MakeTransaction(null, new[]
                 {
                     new TransferOutput
@@ -1128,58 +978,32 @@ namespace Bhp.Shell
                     Console.WriteLine("Insufficient funds");
                     return true;
                 }
+            }
+            ContractParametersContext context = new ContractParametersContext(tx);
+            Program.Wallet.Sign(context);
+            if (context.Completed)
+            {
+                tx.Witnesses = context.GetWitnesses();
 
-                ContractParametersContext context = new ContractParametersContext(tx);
-                Program.Wallet.Sign(context);
-                if (context.Completed)
+                if (tx.Size > Transaction.MaxTransactionSize)
                 {
-                    tx.Witnesses = context.GetWitnesses();
-
-                    if (tx.Size > Transaction.MaxTransactionSize)
-                    {
-                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
-                        return true;
-                    }
-
-                    if (tx.Size > 102400)
-                    {
-                        Fixed8 calFee = Fixed8.FromDecimal(tx.Size * 0.00001m + 0.001m);
-                        if (fee < calFee)
-                        {
-                            fee = calFee;
-                            tx = Program.Wallet.MakeTransaction(null, new[]
-                            {
-                                new TransferOutput
-                                {
-                                    AssetId = assetId,
-                                    Value = amount,
-                                    ScriptHash = scriptHash
-                                }
-                            }, fee: fee);
-                            if (tx == null)
-                            {
-                                Console.WriteLine("Insufficient funds");
-                                return true;
-                            }
-                            context = new ContractParametersContext(tx);
-                            Program.Wallet.Sign(context);
-                            tx.Witnesses = context.GetWitnesses();
-                        }
-                    }
-
-                    Program.Wallet.ApplyTransaction(tx);
-                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-                    Console.WriteLine($"TXID: {tx.Hash}");
+                    Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                    return true;
                 }
-                else
-                {
-                    Console.WriteLine("SignatureContext:");
-                    Console.WriteLine(context.ToString());
-                }
+
+                Program.Wallet.ApplyTransaction(tx);
+                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                Console.WriteLine($"TXID: {tx.Hash}");
+            }
+            else
+            {
+                Console.WriteLine("SignatureContext:");
+                Console.WriteLine(context.ToString());
             }
             return true;
         }
 
+        //BHP
         private bool OnSendCommandEx(string[] args)
         {
             if (args.Length < 4 || args.Length > 5)
@@ -1188,7 +1012,7 @@ namespace Bhp.Shell
                 return true;
             }
             if (NoWallet()) return true;
-            string password = ReadUserInput("password", true);
+            string password = ReadPassword("password");
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -1255,48 +1079,16 @@ namespace Bhp.Shell
                         return true;
                     }
                 }
-
-                ContractParametersContext context = new ContractParametersContext(tx);
-                Program.Wallet.Sign(context);
-                if (context.Completed)
-                {
-                    tx.Witnesses = context.GetWitnesses();
-
-                    if (tx.Size > Transaction.MaxTransactionSize)
-                    {
-                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
-                        return true;
-                    }
-
-                    Program.Wallet.ApplyTransaction(tx);
-                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-                    Console.WriteLine($"TXID: {tx.Hash}");
-                }
-                else
-                {
-                    Console.WriteLine("SignatureContext:");
-                    Console.WriteLine(context.ToString());
-                }
             }
             else
             {
                 AssetDescriptor descriptor = new AssetDescriptor(assetId);
-                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount) || amount.Sign <= 0)
+                if (!BigDecimal.TryParse(args[3], descriptor.Decimals, out BigDecimal amount))
                 {
                     Console.WriteLine("Incorrect Amount Format");
                     return true;
                 }
-
-                Fixed8 fee = Fixed8.Zero;
-                if (args.Length >= 5)
-                {
-                    if (!Fixed8.TryParse(args[4], out fee) || fee < Fixed8.Zero)
-                    {
-                        Console.WriteLine("Incorrect Fee Format");
-                        return true;
-                    }
-                }
-
+                Fixed8 fee = args.Length >= 5 ? Fixed8.Parse(args[4]) : Fixed8.Zero;
                 tx = Program.Wallet.MakeTransaction(null, new[]
                 {
                     new TransferOutput
@@ -1311,54 +1103,27 @@ namespace Bhp.Shell
                     Console.WriteLine("Insufficient funds");
                     return true;
                 }
+            }
+            ContractParametersContext context = new ContractParametersContext(tx);
+            Program.Wallet.Sign(context);
+            if (context.Completed)
+            {
+                tx.Witnesses = context.GetWitnesses();
 
-                ContractParametersContext context = new ContractParametersContext(tx);
-                Program.Wallet.Sign(context);
-                if (context.Completed)
+                if (tx.Size > Transaction.MaxTransactionSize)
                 {
-                    tx.Witnesses = context.GetWitnesses();
-
-                    if (tx.Size > Transaction.MaxTransactionSize)
-                    {
-                        Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
-                        return true;
-                    }
-
-                    if (tx.Size > 102400)
-                    {
-                        Fixed8 calFee = Fixed8.FromDecimal(tx.Size * 0.00001m + 0.001m);
-                        if (fee < calFee)
-                        {
-                            fee = calFee;
-                            tx = Program.Wallet.MakeTransaction(null, new[]
-                            {
-                                new TransferOutput
-                                {
-                                    AssetId = assetId,
-                                    Value = amount,
-                                    ScriptHash = scriptHash
-                                }
-                            }, fee: fee);
-                            if (tx == null)
-                            {
-                                Console.WriteLine("Insufficient funds");
-                                return true;
-                            }
-                            context = new ContractParametersContext(tx);
-                            Program.Wallet.Sign(context);
-                            tx.Witnesses = context.GetWitnesses();
-                        }
-                    }
-
-                    Program.Wallet.ApplyTransaction(tx);
-                    system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-                    Console.WriteLine($"TXID: {tx.Hash}");
+                    Console.WriteLine("The size of the free transaction must be less than 102400 bytes");
+                    return true;
                 }
-                else
-                {
-                    Console.WriteLine("SignatureContext:");
-                    Console.WriteLine(context.ToString());
-                }
+
+                Program.Wallet.ApplyTransaction(tx);
+                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                Console.WriteLine($"TXID: {tx.Hash}");
+            }
+            else
+            {
+                Console.WriteLine("SignatureContext:");
+                Console.WriteLine(context.ToString());
             }
             return true;
         }
@@ -1383,121 +1148,48 @@ namespace Bhp.Shell
         private bool OnShowPoolCommand(string[] args)
         {
             bool verbose = args.Length >= 3 && args[2] == "verbose";
+            Transaction[] transactions = Blockchain.Singleton.MemPool.ToArray();
             if (verbose)
-            {
-                Blockchain.Singleton.MemPool.GetVerifiedAndUnverifiedTransactions(
-                    out IEnumerable<Transaction> verifiedTransactions,
-                    out IEnumerable<Transaction> unverifiedTransactions);
-                Console.WriteLine("Verified Transactions:");
-                foreach (Transaction tx in verifiedTransactions)
-                    Console.WriteLine($" {tx.Hash} {tx.GetType().Name}");
-                Console.WriteLine("Unverified Transactions:");
-                foreach (Transaction tx in unverifiedTransactions)
-                    Console.WriteLine($" {tx.Hash} {tx.GetType().Name}");
-            }
-            Console.WriteLine($"total: {Blockchain.Singleton.MemPool.Count}, verified: {Blockchain.Singleton.MemPool.VerifiedCount}, unverified: {Blockchain.Singleton.MemPool.UnVerifiedCount}");
+                foreach (Transaction tx in transactions)
+                    Console.WriteLine($"{tx.Hash} {tx.GetType().Name}");
+            Console.WriteLine($"total: {transactions.Length}");
             return true;
         }
 
         /*
         private bool OnShowStateCommand(string[] args)
         {
-            var cancel = new CancellationTokenSource();
-
-            Console.CursorVisible = false;
-            Console.Clear();
-            Task broadcast = Task.Run(async () =>
+            bool stop = false;
+            Task.Run(() =>
             {
-                while (!cancel.Token.IsCancellationRequested)
+                while (!stop)
                 {
-                    system.LocalNode.Tell(Message.Create(MessageCommand.Ping, PingPayload.Create(Blockchain.Singleton.Height)));
-                    await Task.Delay(Blockchain.TimePerBlock, cancel.Token);
-                }
-            });
-            Task task = Task.Run(async () =>
-            {
-                int maxLines = 0;
-
-                while (!cancel.Token.IsCancellationRequested)
-                {
-                    Console.SetCursorPosition(0, 0);
-                    WriteLineWithoutFlicker($"block: {Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}", Console.WindowWidth - 1);
-
-                    int linesWritten = 1;
-                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().OrderByDescending(u => u.LastBlockIndex).Take(Console.WindowHeight - 2).ToArray())
-                    {
-                        Console.WriteLine(
-                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerTcpPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex.ToString().PadRight(7)}");
-                        linesWritten++;
-                    }
-
-                    maxLines = Math.Max(maxLines, linesWritten);
-
-                    while (linesWritten < maxLines)
-                    {
-                        WriteLineWithoutFlicker("", Console.WindowWidth - 1);
-                        maxLines--;
-                    }
-
-                    await Task.Delay(500, cancel.Token);
+                    uint wh = 0;
+                    if (Program.Wallet != null)
+                        wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
+                    Console.Clear();
+                    Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
+                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
+                        Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
+                    Thread.Sleep(500);
                 }
             });
             Console.ReadLine();
-            cancel.Cancel();
-            try { Task.WaitAll(task, broadcast); } catch { }
-            Console.WriteLine();
-            Console.CursorVisible = true;
+            stop = true;
             return true;
         }
         */
 
         private bool OnShowStateCommand(string[] args)
         {
-            var cancel = new CancellationTokenSource();
-
-            Console.CursorVisible = false;
-            Console.Clear();
-            Task broadcast = Task.Run(async () =>
-            {
-                while (!cancel.Token.IsCancellationRequested)
-                {
-                    system.LocalNode.Tell(Message.Create(MessageCommand.Ping, PingPayload.Create(Blockchain.Singleton.Height)));
-                    await Task.Delay(Blockchain.TimePerBlock, cancel.Token);
-                }
-            });
-            Task task = Task.Run(async () =>
-            {
-                int maxLines = 0;
-
-                while (!cancel.Token.IsCancellationRequested)
-                {
-                    Console.SetCursorPosition(0, 0);
-                    WriteLineWithoutFlicker($"block: {Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}", Console.WindowWidth - 1);
-
-                    int linesWritten = 1;
-                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().OrderByDescending(u => u.LastBlockIndex).Take(Console.WindowHeight - 2).ToArray())
-                    {
-                        Console.WriteLine(
-                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerTcpPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex.ToString().PadRight(7)}");
-                        linesWritten++;
-                    }
-
-                    maxLines = Math.Max(maxLines, linesWritten);
-
-                    while (linesWritten < maxLines)
-                    {
-                        WriteLineWithoutFlicker("", Console.WindowWidth - 1);
-                        maxLines--;
-                    }
-
-                    await Task.Delay(500, cancel.Token);
-                }
-            });
-            Console.ReadLine();
-            cancel.Cancel();
-            try { Task.WaitAll(task, broadcast); } catch { }
-            Console.WriteLine();
-            Console.CursorVisible = true;
+            uint wh = 0;
+            if (Program.Wallet != null)
+                wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
+            Console.WriteLine("------------------------------RemoteNode List------------------------------");
+            Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
+            foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
+                Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
+            Console.WriteLine("---------------------------------------------------------------------------");
             return true;
         }
 
@@ -1543,39 +1235,15 @@ namespace Bhp.Shell
                     case "-r":
                         useRPC = true;
                         break;
-                    case "/testnet":
-                    case "--testnet":
-                    case "-t":
-                        ProtocolSettings.Initialize(new ConfigurationBuilder().AddJsonFile("protocol.testnet.json").Build());
-                        Settings.Initialize(new ConfigurationBuilder().AddJsonFile("config.testnet.json").Build());
-                        break;
-                    case "/mainnet":
-                    case "--mainnet":
-                    case "-m":
-                        ProtocolSettings.Initialize(new ConfigurationBuilder().AddJsonFile("protocol.mainnet.json").Build());
-                        Settings.Initialize(new ConfigurationBuilder().AddJsonFile("config.mainnet.json").Build());
-                        break;
                 }
             store = new LevelDBStore(Path.GetFullPath(Settings.Default.Paths.Chain));
             system = new BhpSystem(store);
-            system.StartNode(new ChannelsConfig
-            {
-                Tcp = new IPEndPoint(IPAddress.Any, Settings.Default.P2P.Port),
-                WebSocket = new IPEndPoint(IPAddress.Any, Settings.Default.P2P.WsPort),
-                MinDesiredConnections = Settings.Default.P2P.MinDesiredConnections,
-                MaxConnections = Settings.Default.P2P.MaxConnections,
-                MaxConnectionsPerAddress = Settings.Default.P2P.MaxConnectionsPerAddress
-            });
-
+            system.StartNode(Settings.Default.P2P.Port, Settings.Default.P2P.WsPort);
             if (Settings.Default.UnlockWallet.IsActive)
             {
                 try
                 {
-                    Program.Wallet = OpenWallet(Settings.Default.UnlockWallet.Path, Settings.Default.UnlockWallet.Password);
-                }
-                catch (FileNotFoundException)
-                {
-                    Console.WriteLine($"Warning: wallet file \"{Settings.Default.UnlockWallet.Path}\" not found.");
+                    Program.Wallet = OpenWallet(GetIndexer(), Settings.Default.UnlockWallet.Path, Settings.Default.UnlockWallet.Password);
                 }
                 catch (CryptographicException)
                 {
@@ -1598,11 +1266,10 @@ namespace Bhp.Shell
             if (useRPC)
             {
                 system.StartRpc(Settings.Default.RPC.BindAddress,
-                   Settings.Default.RPC.Port,
-                   wallet: Program.Wallet,
-                   sslCert: Settings.Default.RPC.SslCert,
-                   password: Settings.Default.RPC.SslCertPassword,
-                   maxGasInvoke: Fixed8.Parse(Settings.Default.RPC.MaxGasInvoke.ToString()));
+                    Settings.Default.RPC.Port,
+                    wallet: Program.Wallet,
+                    sslCert: Settings.Default.RPC.SslCert,
+                    password: Settings.Default.RPC.SslCertPassword);
             }
 
             if (Settings.Default.ExportWallet.IsActive)
@@ -1664,6 +1331,11 @@ namespace Bhp.Shell
 
         protected internal override void OnStop()
         {
+            if (exportWalletTimer != null)
+            {
+                exportWalletTimer.Stop();
+                exportWalletTimer.Dispose();
+            }
             system.Dispose();
             store.Dispose();
         }
@@ -1679,240 +1351,6 @@ namespace Bhp.Shell
             }
         }
 
-        private bool OnDeployCommand(string[] args)
-        {
-            if (NoWallet()) return true;
-            byte[] script = LoadDeploymentScript(
-               /* filePath */ args[1],
-               /* manifest */ args.Length == 2 ? "" : args[2],
-               /* scriptHash */ out var scriptHash);
-
-            Transaction tx = new Transaction { Script = script };
-            try
-            {
-                Program.Wallet.FillTransaction(tx);
-            }
-            catch (InvalidOperationException)
-            {
-                Console.WriteLine("Engine faulted.");
-                return true;
-            }
-            Console.WriteLine($"Script hash: {scriptHash.ToString()}");
-            Console.WriteLine($"Gas: {tx.Gas}");
-            Console.WriteLine();
-
-            DecorateInvocationTransaction(tx);
-
-            return SignAndSendTx(tx);
-        }
-
-        private byte[] LoadDeploymentScript(string nefFilePath, string manifestFilePath, out UInt160 scriptHash)
-        {
-            if (string.IsNullOrEmpty(manifestFilePath))
-            {
-                manifestFilePath = Path.ChangeExtension(nefFilePath, ".manifest.json");
-            }
-
-            // Read manifest
-
-            var info = new FileInfo(manifestFilePath);
-            if (!info.Exists || info.Length >= Transaction.MaxTransactionSize)
-            {
-                throw new ArgumentException(nameof(manifestFilePath));
-            }
-
-            var manifest = ContractManifest.Parse(File.ReadAllText(manifestFilePath));
-
-            // Read nef
-
-            info = new FileInfo(nefFilePath);
-            if (!info.Exists || info.Length >= Transaction.MaxTransactionSize)
-            {
-                throw new ArgumentException(nameof(manifestFilePath));
-            }
-            NefFile file;
-            using (var stream = new BinaryReader(File.OpenRead(manifestFilePath), Encoding.UTF8, false))
-            {
-                file = stream.ReadSerializable<NefFile>();
-            }
-            // Basic script checks
-
-            using (var engine = new ApplicationEngine(TriggerType.Application, null, null, 0, true))
-            {
-                var context = engine.LoadScript(file.Script);
-
-                while (context.InstructionPointer <= context.Script.Length)
-                {
-                    // Check bad opcodes
-
-                    var ci = context.CurrentInstruction;
-
-                    if (ci == null || !Enum.IsDefined(typeof(OpCode), ci.OpCode))
-                    {
-                        throw new FormatException($"OpCode not found at {context.InstructionPointer}-{((byte)ci.OpCode).ToString("x2")}");
-                    }
-
-                    switch (ci.OpCode)
-                    {
-                        case OpCode.SYSCALL:
-                            {
-                                // Check bad syscalls (BHP2)
-
-                                if (!InteropService.SupportedMethods().ContainsKey(ci.TokenU32))
-                                {
-                                    throw new FormatException($"Syscall not found {ci.TokenU32.ToString("x2")}. Are you using a BHP2 smartContract?");
-                                }
-                                break;
-                            }
-                    }
-
-                    context.InstructionPointer += ci.Size;
-                }
-            }
-
-            // Build script
-
-            scriptHash = file.ScriptHash;
-            using (ScriptBuilder sb = new ScriptBuilder())
-            {
-                sb.EmitSysCall(InteropService.Bhp_Contract_Create, file.Script, manifest.ToJson().ToString());
-                return sb.ToArray();
-            }
-        }
-
-        public InvocationTransaction DecorateInvocationTransaction(InvocationTransaction tx)
-        {
-            Fixed8 fee = Fixed8.FromDecimal(0.001m);
-
-            if (tx.Size > 102400)
-            {
-                fee += Fixed8.FromDecimal(tx.Size * 0.00001m);
-            }
-
-            return Program.Wallet.MakeTransaction(new InvocationTransaction
-            {
-                Version = tx.Version,
-                Script = tx.Script,
-                Gas = tx.Gas,
-                Attributes = tx.Attributes,
-                Inputs = tx.Inputs,
-                Outputs = tx.Outputs
-            }, fee: fee);
-        }
-
-        public void DecorateInvocationTransaction(Transaction tx)
-        {
-            tx.NetworkFee = 100000;
-
-            if (tx.Size > 1024)
-            {
-                tx.NetworkFee += tx.Size * 1000;
-            }
-        }
-
-        public bool SignAndSendTx(InvocationTransaction tx)
-        {
-            ContractParametersContext context;
-            try
-            {
-                context = new ContractParametersContext(tx);
-            }
-            catch (InvalidOperationException ex)
-            {
-                Console.WriteLine($"Error creating contract params: {ex}");
-                throw;
-            }
-            Program.Wallet.Sign(context);
-            string msg;
-            if (context.Completed)
-            {
-                tx.Witnesses = context.GetWitnesses();
-                Program.Wallet.ApplyTransaction(tx);
-
-                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
-
-                msg = $"Signed and relayed transaction with hash={tx.Hash}";
-                Console.WriteLine(msg);
-                return true;
-            }
-
-            msg = $"Failed sending transaction with hash={tx.Hash}";
-            Console.WriteLine(msg);
-            return true;
-        }
-
-        private bool OnInvokeCommand(string[] args)
-        {
-            var scriptHash = UInt160.Parse(args[1]);
-
-            List<ContractParameter> contractParameters = new List<ContractParameter>();
-            for (int i = 3; i < args.Length; i++)
-            {
-                contractParameters.Add(new ContractParameter()
-                {
-                    // TODO: support contract params of type other than string.
-                    Type = ContractParameterType.String,
-                    Value = args[i]
-                });
-            }
-
-            ContractParameter[] parameters =
-            {
-                new ContractParameter
-                {
-                    Type = ContractParameterType.String,
-                    Value = args[2]
-                },
-                new ContractParameter
-                {
-                    Type = ContractParameterType.Array,
-                    Value = contractParameters.ToArray()
-                }
-            };
-
-            var tx = new InvocationTransaction();
-
-            using (ScriptBuilder scriptBuilder = new ScriptBuilder())
-            {
-                for (int i = parameters.Length - 1; i >= 0; i--)
-                    scriptBuilder.EmitPush(parameters[i]);
-                scriptBuilder.EmitPush(scriptHash.ToArray());
-                Console.WriteLine($"Invoking script with: '{scriptBuilder.ToArray().ToHexString()}'");
-                tx.Script = scriptBuilder.ToArray();
-            }
-
-            if (tx.Attributes == null) tx.Attributes = new TransactionAttribute[0];
-            if (tx.Inputs == null) tx.Inputs = new CoinReference[0];
-            if (tx.Outputs == null) tx.Outputs = new TransactionOutput[0];
-            if (tx.Witnesses == null) tx.Witnesses = new Witness[0];
-            ApplicationEngine engine = ApplicationEngine.Run(tx.Script, tx, testMode: true);
-
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine($"VM State: {engine.State}");
-            sb.AppendLine($"Gas Consumed: {engine.GasConsumed}");
-            sb.AppendLine(
-                $"Evaluation Stack: {new JArray(engine.ResultStack.Select(p => p.ToParameter().ToJson()))}");
-            Console.WriteLine(sb.ToString());
-            if (engine.State.HasFlag(VMState.FAULT))
-            {
-                Console.WriteLine("Engine faulted.");
-                return true;
-            }
-
-            if (NoWallet()) return true;
-            tx = DecorateInvocationTransaction(tx);
-            if (tx == null)
-            {
-                Console.WriteLine("error: insufficient balance.");
-                return true;
-            }
-            if (!ReadUserInput("relay tx(no|yes)").IsYes())
-            {
-                return true;
-            }
-            return SignAndSendTx(tx);
-        }
-
         private bool OnInstallCommand(string[] args)
         {
             if (args.Length < 2)
@@ -1920,35 +1358,15 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
-
-            bool isTemp;
-            string fileName;
             var pluginName = args[1];
-
-            if (!File.Exists(pluginName))
+            var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
+            var fileName = Path.Combine("Plugins", $"{pluginName}.zip");
+            Directory.CreateDirectory("Plugins");
+            Console.WriteLine($"Downloading from {address}");
+            using (WebClient wc = new WebClient())
             {
-                if (string.IsNullOrEmpty(Settings.Default.PluginURL))
-                {
-                    Console.WriteLine("You must define `PluginURL` in your `config.json`");
-                    return true;
-                }
-
-                var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
-                fileName = Path.Combine(Path.GetTempPath(), $"{pluginName}.zip");
-                isTemp = true;
-
-                Console.WriteLine($"Downloading from {address}");
-                using (WebClient wc = new WebClient())
-                {
-                    wc.DownloadFile(address, fileName);
-                }
+                wc.DownloadFile(address, fileName);
             }
-            else
-            {
-                fileName = pluginName;
-                isTemp = false;
-            }
-
             try
             {
                 ZipFile.ExtractToDirectory(fileName, ".");
@@ -1960,12 +1378,8 @@ namespace Bhp.Shell
             }
             finally
             {
-                if (isTemp)
-                {
-                    File.Delete(fileName);
-                }
+                File.Delete(fileName);
             }
-
             Console.WriteLine($"Install successful, please restart bhp-cli.");
             return true;
         }
@@ -1978,10 +1392,7 @@ namespace Bhp.Shell
                 return true;
             }
             var pluginName = args[1];
-            if (Directory.Exists(Path.Combine("Plugins", pluginName)))
-            {
-                Directory.Delete(Path.Combine("Plugins", pluginName), true);
-            }
+            Directory.Delete(Path.Combine("Plugins", pluginName), true);
             File.Delete(Path.Combine("Plugins", $"{pluginName}.dll"));
             Console.WriteLine($"Uninstall successful, please restart bhp-cli.");
             return true;
@@ -2005,7 +1416,7 @@ namespace Bhp.Shell
                 Console.WriteLine("File does not exist.");
                 return true;
             }
-            string password = ReadUserInput("password", true);
+            string password = ReadPassword("password");
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -2022,31 +1433,18 @@ namespace Bhp.Shell
             return true;
         }
 
-        private static Wallet OpenWallet(string path, string password)
+        private static Wallet OpenWallet(WalletIndexer indexer, string path, string password)
         {
-            if (!File.Exists(path))
-            {
-                throw new FileNotFoundException();
-            }
-
             if (Path.GetExtension(path) == ".db3")
             {
-                return UserWallet.Open(path, password);
+                return UserWallet.Open(indexer, path, password);
             }
             else
             {
-                BRC6Wallet brc6wallet = new BRC6Wallet(path);
+                BRC6Wallet brc6wallet = new BRC6Wallet(indexer, path);
                 brc6wallet.Unlock(password);
                 return brc6wallet;
             }
-        }
-
-        private static void WriteLineWithoutFlicker(string message = "", int maxWidth = 80)
-        {
-            if (message.Length > 0) Console.Write(message);
-            var spacesToErase = maxWidth - message.Length;
-            if (spacesToErase < 0) spacesToErase = 0;
-            Console.WriteLine(new string(' ', spacesToErase));
         }
     }
 }

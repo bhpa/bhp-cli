@@ -1,8 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Bhp.Network.P2P;
 using System.Net;
-using Bhp.SmartContract.Native;
-using System.Threading;
 
 namespace Bhp
 {
@@ -16,30 +14,12 @@ namespace Bhp
         public DataRPCSettings DataRPC { get; set; }
         public ExportWalletSettings ExportWallet { get; set; }
 
-        static Settings _default;
+        public static Settings Default { get; }
 
-        static bool UpdateDefault(IConfiguration configuration)
+        static Settings()
         {
-            var settings = new Settings(configuration.GetSection("ApplicationConfiguration"));
-            return null == Interlocked.CompareExchange(ref _default, settings, null);
-        }
-
-        public static bool Initialize(IConfiguration configuration)
-        {
-            return UpdateDefault(configuration);
-        }
-
-        public static Settings Default
-        {
-            get
-            {
-                if (_default == null)
-                {
-                    UpdateDefault(Helper.LoadConfig("config"));
-                }
-
-                return _default;
-            }
+            IConfigurationSection section = new ConfigurationBuilder().AddJsonFile("config.json").Build().GetSection("ApplicationConfiguration");
+            Default = new Settings(section);
         }
 
         public Settings(IConfigurationSection section)
@@ -61,8 +41,8 @@ namespace Bhp
 
         public PathsSettings(IConfigurationSection section)
         {
-            this.Chain = string.Format(section.GetSection("Chain").Value, ProtocolSettings.Default.Magic.ToString("X8"));
-            this.Index = string.Format(section.GetSection("Index").Value, ProtocolSettings.Default.Magic.ToString("X8"));
+            this.Chain = string.Format(section.GetSection("Chain").Value, Message.Magic.ToString("X8"));
+            this.Index = string.Format(section.GetSection("Index").Value, Message.Magic.ToString("X8"));
         }
     }
 
@@ -70,17 +50,11 @@ namespace Bhp
     {
         public ushort Port { get; }
         public ushort WsPort { get; }
-        public int MinDesiredConnections { get; }
-        public int MaxConnections { get; }
-        public int MaxConnectionsPerAddress { get; }
 
         public P2PSettings(IConfigurationSection section)
         {
             this.Port = ushort.Parse(section.GetSection("Port").Value);
             this.WsPort = ushort.Parse(section.GetSection("WsPort").Value);
-            this.MinDesiredConnections = section.GetValue("MinDesiredConnections", Peer.DefaultMinDesiredConnections);
-            this.MaxConnections = section.GetValue("MaxConnections", Peer.DefaultMaxConnections);
-            this.MaxConnectionsPerAddress = section.GetValue("MaxConnectionsPerAddress", 3);
         }
     }
 
@@ -90,7 +64,6 @@ namespace Bhp
         public ushort Port { get; }
         public string SslCert { get; }
         public string SslCertPassword { get; }
-        public long MaxGasInvoke { get; }
 
         public RPCSettings(IConfigurationSection section)
         {
@@ -98,7 +71,6 @@ namespace Bhp
             this.Port = ushort.Parse(section.GetSection("Port").Value);
             this.SslCert = section.GetSection("SslCert").Value;
             this.SslCertPassword = section.GetSection("SslCertPassword").Value;
-            this.MaxGasInvoke = (long)BigDecimal.Parse(section.GetValue("MaxGasInvoke", "10"), NativeContract.GAS.Decimals).Value;
         }
     }
 
