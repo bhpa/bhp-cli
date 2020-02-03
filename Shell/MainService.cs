@@ -1188,7 +1188,7 @@ namespace Bhp.Shell
             Console.WriteLine("------------------------------RemoteNode List------------------------------");
             Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
             foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
+                Console.WriteLine($"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerPort.ToString().PadRight(5)}\theight: {node.Version?.StartHeight}");
             Console.WriteLine("---------------------------------------------------------------------------");
             return true;
         }
