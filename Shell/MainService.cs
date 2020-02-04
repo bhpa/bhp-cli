@@ -689,6 +689,14 @@ namespace Bhp.Shell
             catch (FormatException) { }
             if (prikey == null)
             {
+                var file = new FileInfo(args[2]);
+
+                if (!file.Exists)
+                {
+                    Console.WriteLine($"Error: File '{file.FullName}' doesn't exists");
+                    return true;
+                }
+                
                 string[] lines = File.ReadAllLines(args[2]);
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -1436,6 +1444,11 @@ namespace Bhp.Shell
                 return true;
             }
             string path_new = Path.ChangeExtension(path, ".json");
+            if (File.Exists(path_new))
+            {
+                Console.WriteLine($"File '{path_new}' already exists");
+                return true;
+            }
             BRC6Wallet.Migrate(GetIndexer(), path_new, path, password).Save();
             Console.WriteLine($"Wallet file upgrade complete. New wallet file has been auto-saved at: {path_new}");
             return true;
