@@ -1374,15 +1374,35 @@ namespace Bhp.Shell
                 Console.WriteLine("error");
                 return true;
             }
+
+            bool isTemp;
+            string fileName;
             var pluginName = args[1];
-            var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
-            var fileName = Path.Combine("Plugins", $"{pluginName}.zip");
-            Directory.CreateDirectory("Plugins");
-            Console.WriteLine($"Downloading from {address}");
-            using (WebClient wc = new WebClient())
+
+            if (!File.Exists(pluginName))
             {
-                wc.DownloadFile(address, fileName);
+                if (string.IsNullOrEmpty(Settings.Default.PluginURL))
+                {
+                    Console.WriteLine("You must define `PluginURL` in your `config.json`");
+                    return true;
+                }
+
+                var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
+                fileName = Path.Combine(Path.GetTempPath(), $"{pluginName}.zip");
+                isTemp = true;
+
+                Console.WriteLine($"Downloading from {address}");
+                using (WebClient wc = new WebClient())
+                {
+                    wc.DownloadFile(address, fileName);
+                }
             }
+            else
+            {
+                fileName = pluginName;
+                isTemp = false;
+            }
+
             try
             {
                 ZipFile.ExtractToDirectory(fileName, ".");
@@ -1394,8 +1414,12 @@ namespace Bhp.Shell
             }
             finally
             {
-                File.Delete(fileName);
+                if (isTemp)
+                {
+                    File.Delete(fileName);
+                }
             }
+
             Console.WriteLine($"Install successful, please restart bhp-cli.");
             return true;
         }
