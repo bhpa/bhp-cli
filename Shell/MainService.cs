@@ -136,17 +136,7 @@ namespace Bhp.Shell
                 case "tx":
                     payload = Blockchain.Singleton.GetTransaction(UInt256.Parse(args[2]));
                     break;
-                case "alert":
-                case "consensus":
-                case "filteradd":
-                case "filterload":
-                case "headers":
-                case "merkleblock":
-                case "ping":
-                case "pong":
-                case "reject":
-                case "verack":
-                case "version":
+                default:
                     Console.WriteLine($"Command \"{command}\" is not supported.");
                     return true;
             }
@@ -696,7 +686,7 @@ namespace Bhp.Shell
                     Console.WriteLine($"Error: File '{file.FullName}' doesn't exists");
                     return true;
                 }
-                
+
                 string[] lines = File.ReadAllLines(args[2]);
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -1432,7 +1422,7 @@ namespace Bhp.Shell
                 return true;
             }
             var pluginName = args[1];
-            
+
             if (!Plugin.Plugins.Any(u => u.Name == pluginName))
             {
                 Console.WriteLine("Plugin not found");
