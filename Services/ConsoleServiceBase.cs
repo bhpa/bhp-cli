@@ -39,7 +39,7 @@ namespace Bhp.Services
 
         protected internal abstract void OnStop();
 
-        public static string ReadPassword(string prompt)
+        public static string ReadUserInput(string prompt, bool isPassword = false)
         {
             const string t = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
             StringBuilder sb = new StringBuilder();
@@ -55,7 +55,14 @@ namespace Bhp.Services
                 if (t.IndexOf(key.KeyChar) != -1)
                 {
                     sb.Append(key.KeyChar);
-                    Console.Write('*');
+                    if (isPassword)
+                    {
+                        Console.Write('*');
+                    }
+                    else
+                    {
+                        Console.Write(key.KeyChar);
+                    }
                 }
                 else if (key.Key == ConsoleKey.Backspace && sb.Length > 0)
                 {

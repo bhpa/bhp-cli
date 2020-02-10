@@ -85,7 +85,7 @@ namespace Bhp.Shell
                 case "open":
                     return OnOpenCommand(args);
                 case "close":
-                    return OnCloseCommand(args);                    
+                    return OnCloseCommand(args);
                 case "rebuild":
                     return OnRebuildCommand(args);
                 case "send":
@@ -173,9 +173,8 @@ namespace Bhp.Shell
                     return true;
                 }
                 tx.Witnesses = context.GetWitnesses();
-                IInventory inventory = (IInventory)context.Verifiable;
-                system.LocalNode.Tell(new LocalNode.Relay { Inventory = inventory });
-                Console.WriteLine($"Data relay success, the hash is shown as follows:\r\n{inventory.Hash}");
+                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                Console.WriteLine($"Data relay success, the hash is shown as follows:\r\n{tx.Hash}");
             }
             catch (Exception e)
             {
@@ -296,7 +295,7 @@ namespace Bhp.Shell
                 return true;
             }
             string path = args[2];
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -307,7 +306,7 @@ namespace Bhp.Shell
                 Console.WriteLine($"password max length {RpcExtension.MaxPWLength}");
                 return true;
             }
-            string password2 = ReadPassword("password");
+            string password2 = ReadUserInput("password", true);
             if (password != password2)
             {
                 Console.WriteLine("error");
@@ -470,7 +469,7 @@ namespace Bhp.Shell
                 return true;
             }
 
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -515,7 +514,7 @@ namespace Bhp.Shell
                 return true;
             }
 
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -578,7 +577,7 @@ namespace Bhp.Shell
                 "Wallet Commands:\n" +
                 "\tcreate wallet <path>\n" +
                 "\topen wallet <path>\n" +
-                "\tclose wallet\n" + 
+                "\tclose wallet\n" +
                 "\tupgrade wallet <path>\n" +
                 "\trebuild index\n" +
                 "\tlist address\n" +
@@ -690,6 +689,11 @@ namespace Bhp.Shell
                     return true;
                 }
 
+                if (file.Length > 1024 * 1024)
+                {
+                    if (ReadUserInput($"The file '{file.FullName}' is too big, do you want to continue? (yes|no)", false)?.ToLowerInvariant() != "yes") return true;
+                }
+
                 string[] lines = File.ReadAllLines(args[2]);
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -744,7 +748,7 @@ namespace Bhp.Shell
 
             if (useChangeAddress)
             {
-                string password = ReadPassword("password");
+                string password = ReadUserInput("password", true);
                 if (password.Length == 0)
                 {
                     Console.WriteLine("cancelled");
@@ -860,7 +864,7 @@ namespace Bhp.Shell
                 Console.WriteLine($"File does not exist");
                 return true;
             }
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -928,7 +932,7 @@ namespace Bhp.Shell
                 return true;
             }
             if (NoWallet()) return true;
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -1044,7 +1048,7 @@ namespace Bhp.Shell
                 return true;
             }
             if (NoWallet()) return true;
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
@@ -1491,7 +1495,7 @@ namespace Bhp.Shell
                 Console.WriteLine("File does not exist.");
                 return true;
             }
-            string password = ReadPassword("password");
+            string password = ReadUserInput("password", true);
             if (password.Length == 0)
             {
                 Console.WriteLine("cancelled");
