@@ -85,7 +85,7 @@ namespace Bhp.Shell
                 case "open":
                     return OnOpenCommand(args);
                 case "close":
-                    return OnCloseCommand(args);                    
+                    return OnCloseCommand(args);
                 case "rebuild":
                     return OnRebuildCommand(args);
                 case "send":
@@ -173,9 +173,8 @@ namespace Bhp.Shell
                     return true;
                 }
                 tx.Witnesses = context.GetWitnesses();
-                IInventory inventory = (IInventory)context.Verifiable;
-                system.LocalNode.Tell(new LocalNode.Relay { Inventory = inventory });
-                Console.WriteLine($"Data relay success, the hash is shown as follows:\r\n{inventory.Hash}");
+                system.LocalNode.Tell(new LocalNode.Relay { Inventory = tx });
+                Console.WriteLine($"Data relay success, the hash is shown as follows:\r\n{tx.Hash}");
             }
             catch (Exception e)
             {
@@ -578,7 +577,7 @@ namespace Bhp.Shell
                 "Wallet Commands:\n" +
                 "\tcreate wallet <path>\n" +
                 "\topen wallet <path>\n" +
-                "\tclose wallet\n" + 
+                "\tclose wallet\n" +
                 "\tupgrade wallet <path>\n" +
                 "\trebuild index\n" +
                 "\tlist address\n" +
