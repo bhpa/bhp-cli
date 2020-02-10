@@ -688,7 +688,7 @@ namespace Bhp.Shell
                     Console.WriteLine($"Error: File '{file.FullName}' doesn't exists");
                     return true;
                 }
-
+                
                 if (file.Length > 1024 * 1024)
                 {
                     if (ReadUserInput($"The file '{file.FullName}' is too big, do you want to continue? (yes|no)", false)?.ToLowerInvariant() != "yes") return true;
@@ -1204,36 +1204,82 @@ namespace Bhp.Shell
         private bool OnShowStateCommand(string[] args)
         {
             bool stop = false;
-            Task.Run(() =>
+            Console.CursorVisible = false;
+            Console.Clear();
+            Task task = Task.Run(async () =>
             {
                 while (!stop)
                 {
+                    Console.SetCursorPosition(0, 0);
                     uint wh = 0;
                     if (Program.Wallet != null)
                         wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
-                    Console.Clear();
-                    Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
-                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                        Console.WriteLine($"  ip: {node.Remote.Address}\tport: {node.Remote.Port}\tlisten: {node.ListenerPort}\theight: {node.Version?.StartHeight}");
-                    Thread.Sleep(500);
+
+                    WriteLineWithoutFlicker($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
+                    int linesWritten = 1;
+                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2).ToArray())
+                    {
+                        WriteLineWithoutFlicker(
+                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex}");
+                        linesWritten++;
+                    }
+
+                    while (++linesWritten < Console.WindowHeight)
+                        WriteLineWithoutFlicker();
+                    await Task.Delay(500);
                 }
             });
             Console.ReadLine();
             stop = true;
+            task.Wait();
+            Console.WriteLine();
+            Console.CursorVisible = true;
             return true;
         }
         */
 
+        private static void WriteLineWithoutFlicker(string msg = "", int maxWidth = 80)
+        {
+            if (msg.Length > 0) Console.Write(msg);
+            var spacesToErase = maxWidth - msg.Length;
+            if (spacesToErase < 0) spacesToErase = 0;
+            Console.WriteLine(new string(' ', spacesToErase));
+        }
+
         private bool OnShowStateCommand(string[] args)
         {
-            uint wh = 0;
-            if (Program.Wallet != null)
-                wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
-            Console.WriteLine("------------------------------RemoteNode List------------------------------");
-            Console.WriteLine($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
-            foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2))
-                Console.WriteLine($"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerPort.ToString().PadRight(5)}\theight: {node.Version?.StartHeight}");
-            Console.WriteLine("---------------------------------------------------------------------------");
+            bool stop = false;
+            Console.CursorVisible = false;
+            Console.Clear();
+            Task task = Task.Run(async () =>
+            {
+                while (!stop)
+                {
+                    Console.SetCursorPosition(0, 0);
+                    uint wh = 0;
+                    if (Program.Wallet != null)
+                        wh = (Program.Wallet.WalletHeight > 0) ? Program.Wallet.WalletHeight - 1 : 0;
+
+                    WriteLineWithoutFlicker("------------------------------RemoteNode List------------------------------");
+                    WriteLineWithoutFlicker($"block: {wh}/{Blockchain.Singleton.Height}/{Blockchain.Singleton.HeaderHeight}  connected: {LocalNode.Singleton.ConnectedCount}  unconnected: {LocalNode.Singleton.UnconnectedCount}");
+                    int linesWritten = 2;
+                    foreach (RemoteNode node in LocalNode.Singleton.GetRemoteNodes().Take(Console.WindowHeight - 2).ToArray())
+                    {
+                        WriteLineWithoutFlicker(
+                            $"  ip: {node.Remote.Address.ToString().PadRight(15)}\tport: {node.Remote.Port.ToString().PadRight(5)}\tlisten: {node.ListenerPort.ToString().PadRight(5)}\theight: {node.LastBlockIndex}");
+                        linesWritten++;
+                    }
+
+                    while (++linesWritten < Console.WindowHeight)
+                        WriteLineWithoutFlicker();
+                    await Task.Delay(500);
+                }
+            });
+            Console.ReadLine();
+            stop = true;
+            task.Wait();
+            Console.WriteLine();
+            Console.CursorVisible = true;
             return true;
         }
 
