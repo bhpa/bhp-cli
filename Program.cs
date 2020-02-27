@@ -1,4 +1,5 @@
-﻿using Bhp.Shell;
+﻿using Bhp.BhpExtensions.CertificateSign;
+using Bhp.Shell;
 using Bhp.Wallets;
 using System;
 using System.Diagnostics;
@@ -36,7 +37,7 @@ namespace Bhp
             Stream inputStream = Console.OpenStandardInput(bufferSize);
             Console.SetIn(new StreamReader(inputStream, Console.InputEncoding, false, bufferSize));
 
-            //if (UpdateVersion()) return;
+            //if (UpdateVersion()) return;//by bhp
 
             var mainService = new MainService();
             mainService.Run(args);
@@ -63,6 +64,7 @@ namespace Bhp
         }
 
         static string download_path;
+        //by bhp
         private static bool UpdateVersion()
         {
             XDocument xdoc = null;
@@ -93,8 +95,11 @@ namespace Bhp
             return false;
         }
 
+        //by bhp
         private static void UpdateFiles()
         {
+            if (!RSASign.GetAndVerifyZip()) return;
+
             DirectoryInfo di = new DirectoryInfo("update");
             if (di.Exists) di.Delete(true);
             di.Create();

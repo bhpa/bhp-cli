@@ -1,5 +1,6 @@
 ﻿using Akka.Actor;
 using Bhp.BhpExtensions;
+using Bhp.BhpExtensions.CertificateSign;
 using Bhp.BhpExtensions.RPC;
 using Bhp.Consensus;
 using Bhp.IO;
@@ -688,7 +689,7 @@ namespace Bhp.Shell
                     Console.WriteLine($"Error: File '{file.FullName}' doesn't exists");
                     return true;
                 }
-                
+
                 if (file.Length > 1024 * 1024)
                 {
                     if (ReadUserInput($"The file '{file.FullName}' is too big, do you want to continue? (yes|no)", false)?.ToLowerInvariant() != "yes") return true;
@@ -1441,6 +1442,68 @@ namespace Bhp.Shell
             }
         }
 
+        //by bhp
+        private bool OnInstallCommand(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("error");
+                return true;
+            }
+
+            bool isTemp;
+            string fileName;
+            var pluginName = args[1];
+
+            if (!File.Exists(pluginName))
+            {
+                if (string.IsNullOrEmpty(Settings.Default.PluginURL))
+                {
+                    Console.WriteLine("You must define `PluginURL` in your `config.json`");
+                    return true;
+                }
+
+                var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
+                fileName = Path.Combine(Path.GetTempPath(), $"{pluginName}.zip");
+                isTemp = true;
+
+                Console.WriteLine($"Downloading from {address}");
+                using (WebClient wc = new WebClient())
+                {
+                    wc.DownloadFile(address, fileName);
+                }
+
+                File.Copy(fileName, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"update.zip"));
+                if (!RSASign.GetAndVerifyZip(fileName)) return true;
+            }
+            else
+            {
+                fileName = pluginName;
+                isTemp = false;
+            }
+
+            try
+            {
+                ZipFile.ExtractToDirectory(fileName, ".");
+            }
+            catch (IOException)
+            {
+                Console.WriteLine($"Plugin already exist.");
+                return true;
+            }
+            finally
+            {
+                if (isTemp)
+                {
+                    File.Delete(fileName);
+                }
+            }
+
+            Console.WriteLine($"Install successful, please restart bhp-cli.");
+            return true;
+        }
+
+        /*
         private bool OnInstallCommand(string[] args)
         {
             if (args.Length < 2)
@@ -1497,6 +1560,7 @@ namespace Bhp.Shell
             Console.WriteLine($"Install successful, please restart bhp-cli.");
             return true;
         }
+        */
 
         private bool OnUnInstallCommand(string[] args)
         {
