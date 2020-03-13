@@ -1443,6 +1443,7 @@ namespace Bhp.Shell
         }
 
         //by bhp
+        /*
         private bool OnInstallCommand(string[] args)
         {
             if (args.Length < 2)
@@ -1502,8 +1503,8 @@ namespace Bhp.Shell
             Console.WriteLine($"Install successful, please restart bhp-cli.");
             return true;
         }
+        */
 
-        /*
         private bool OnInstallCommand(string[] args)
         {
             if (args.Length < 2)
@@ -1560,7 +1561,6 @@ namespace Bhp.Shell
             Console.WriteLine($"Install successful, please restart bhp-cli.");
             return true;
         }
-        */
 
         private bool OnUnInstallCommand(string[] args)
         {

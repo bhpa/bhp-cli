@@ -98,7 +98,7 @@ namespace Bhp
         //by bhp
         private static void UpdateFiles()
         {
-            if (!RSASign.GetAndVerifyZip()) return;
+            //if (!RSASign.GetAndVerifyZip()) return;
 
             DirectoryInfo di = new DirectoryInfo("update");
             if (di.Exists) di.Delete(true);
