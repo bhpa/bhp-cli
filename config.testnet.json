@@ -12,7 +12,8 @@
       "BindAddress": "127.0.0.1",
       "Port": 20557,
       "SslCert": "",
-      "SslCertPassword": ""
+      "SslCertPassword": "",
+      "MaxGasInvoke": 0
     },
     "UnlockWallet": {
       "Path": "",
