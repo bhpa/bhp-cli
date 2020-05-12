@@ -50,11 +50,13 @@ namespace Bhp
     {
         public ushort Port { get; }
         public ushort WsPort { get; }
+        public int MaxConnections { get; }
 
         public P2PSettings(IConfigurationSection section)
         {
             this.Port = ushort.Parse(section.GetSection("Port").Value);
             this.WsPort = ushort.Parse(section.GetSection("WsPort").Value);
+            this.MaxConnections = section.GetValue("MaxConnections", Peer.DefaultMaxConnections);
         }
     }
 
