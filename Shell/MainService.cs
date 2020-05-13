@@ -1251,7 +1251,8 @@ namespace Bhp.Shell
             system.StartNode(
                 port: Settings.Default.P2P.Port,
                 wsPort: Settings.Default.P2P.WsPort,
-                maxConnections: Settings.Default.P2P.MaxConnections);
+                maxConnections: Settings.Default.P2P.MaxConnections,
+                maxConnectionsPerAddress: Settings.Default.P2P.MaxConnectionsPerAddress);
             if (Settings.Default.UnlockWallet.IsActive)
             {
                 try
