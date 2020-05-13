@@ -60,7 +60,7 @@ namespace Bhp
             this.WsPort = ushort.Parse(section.GetSection("WsPort").Value);
             this.MinDesiredConnections = section.GetValue("MinDesiredConnections", Peer.DefaultMinDesiredConnections);
             this.MaxConnections = section.GetValue("MaxConnections", Peer.DefaultMaxConnections);
-            this.MaxConnectionsPerAddress = section.GetValue("MaxConnectionsPerAddress", 3);
+            this.MaxConnectionsPerAddress = section.GetValue("MaxConnectionsPerAddress", Peer.DefaultMaxConnectionsPerAddress);
         }
     }
 
