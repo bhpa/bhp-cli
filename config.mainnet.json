@@ -26,7 +26,7 @@
       "AutoLock": false,
       "IsBhpFee": false
     },
-    "PluginURL": "",
+    "PluginURL": "https://github.com/BhpAlpha/bhp-plugins/releases/download/v{0}/{1}",
     "DataRPC": {
       "Host": ""
     },

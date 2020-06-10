@@ -1584,7 +1584,8 @@ namespace Bhp.Shell
 
             bool isTemp;
             string fileName;
-            var pluginName = args[1];
+            string version = typeof(Plugin).Assembly.GetVersion();
+            var pluginName = string.Concat(args[1], "-v", version, ".zip");
 
             if (!File.Exists(pluginName))
             {
@@ -1594,8 +1595,8 @@ namespace Bhp.Shell
                     return true;
                 }
 
-                var address = string.Format(Settings.Default.PluginURL, pluginName, typeof(Plugin).Assembly.GetVersion());
-                fileName = Path.Combine(Path.GetTempPath(), $"{pluginName}.zip");
+                var address = string.Format(Settings.Default.PluginURL, version, pluginName);
+                fileName = Path.Combine(Path.GetTempPath(), pluginName);
                 isTemp = true;
 
                 Console.WriteLine($"Downloading from {address}");
@@ -1612,7 +1613,7 @@ namespace Bhp.Shell
 
             try
             {
-                ZipFile.ExtractToDirectory(fileName, ".");
+                ZipFile.ExtractToDirectory(fileName, "./Plugins");
             }
             catch (IOException)
             {
