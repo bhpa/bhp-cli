@@ -1,6 +1,5 @@
 ﻿using Akka.Actor;
 using Bhp.BhpExtensions;
-using Bhp.BhpExtensions.CertificateSign;
 using Bhp.BhpExtensions.RPC;
 using Bhp.Consensus;
 using Bhp.IO;
@@ -26,7 +25,6 @@ using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using ECCurve = Bhp.Cryptography.ECC.ECCurve;
 using ECPoint = Bhp.Cryptography.ECC.ECPoint;
@@ -77,9 +75,9 @@ namespace Bhp.Shell
                 case "export":
                     return OnExportCommand(args);
                 case "help":
-                    return OnHelpCommand(args);
+                    return OnHelpCommand();
                 case "plugins":
-                    return OnPluginsCommand(args);
+                    return OnPluginsCommand();
                 case "import":
                     return OnImportCommand(args);
                 case "list":
@@ -491,7 +489,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnHelpCommand(string[] args)
+        private bool OnHelpCommand()
         {
             Console.Write(
                 "Normal Commands:\n" +
@@ -533,7 +531,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnPluginsCommand(string[] args)
+        private bool OnPluginsCommand()
         {
             if (Plugin.Plugins.Count > 0)
             {
@@ -652,11 +650,11 @@ namespace Bhp.Shell
             switch (args[1].ToLower())
             {
                 case "address":
-                    return OnListAddressCommand(args);
+                    return OnListAddressCommand();
                 case "asset":
-                    return OnListAssetCommand(args);
+                    return OnListAssetCommand();
                 case "key":
-                    return OnListKeyCommand(args);
+                    return OnListKeyCommand();
                 default:
                     return base.OnCommand(args);
             }
@@ -704,7 +702,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnShowGasCommand(string[] args)
+        private bool OnShowGasCommand()
         {
             if (NoWallet()) return true;
 
@@ -714,7 +712,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnListKeyCommand(string[] args)
+        private bool OnListKeyCommand()
         {
             if (NoWallet()) return true;
             foreach (KeyPair key in Program.Wallet.GetAccounts().Where(p => p.HasKey).Select(p => p.GetKey()))
@@ -724,7 +722,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnListAddressCommand(string[] args)
+        private bool OnListAddressCommand()
         {
             if (NoWallet()) return true;
             foreach (Contract contract in Program.Wallet.GetAccounts().Where(p => !p.WatchOnly).Select(p => p.Contract))
@@ -734,7 +732,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool OnListAssetCommand(string[] args)
+        private bool OnListAssetCommand()
         {
             if (NoWallet()) return true;
             foreach (var item in Program.Wallet.GetCoins().Where(p => !p.State.HasFlag(CoinState.Spent)).GroupBy(p => p.Output.AssetId, (k, g) => new
@@ -769,7 +767,7 @@ namespace Bhp.Shell
             switch (args[1].ToLower())
             {
                 case "wallet":
-                    return onCloseWalletCommand(args);
+                    return onCloseWalletCommand();
                 default:
                     return base.OnCommand(args);
             }
@@ -814,7 +812,7 @@ namespace Bhp.Shell
             return true;
         }
 
-        private bool onCloseWalletCommand(string[] args)
+        private bool onCloseWalletCommand()
         {
             if (Program.Wallet == null)
             {
@@ -839,13 +837,13 @@ namespace Bhp.Shell
             switch (args[1].ToLower())
             {
                 case "index":
-                    return OnRebuildIndexCommand(args);
+                    return OnRebuildIndexCommand();
                 default:
                     return base.OnCommand(args);
             }
         }
 
-        private bool OnRebuildIndexCommand(string[] args)
+        private bool OnRebuildIndexCommand()
         {
             GetIndexer().RebuildIndex();
             return true;
@@ -1096,11 +1094,11 @@ namespace Bhp.Shell
             switch (args[1].ToLower())
             {
                 case "gas":
-                    return OnShowGasCommand(args);
+                    return OnShowGasCommand();
                 case "pool":
                     return OnShowPoolCommand(args);
                 case "state":
-                    return OnShowStateCommand(args);
+                    return OnShowStateCommand();
                 case "utxo":
                     return OnShowUtxoCommand(args);
                 default:
@@ -1173,7 +1171,7 @@ namespace Bhp.Shell
             Console.WriteLine(new string(' ', spacesToErase));
         }
 
-        private bool OnShowStateCommand(string[] args)
+        private bool OnShowStateCommand()
         {
             bool stop = false;
             Console.CursorVisible = false;
@@ -1273,7 +1271,7 @@ namespace Bhp.Shell
                 }
                 if (Settings.Default.UnlockWallet.StartConsensus && Program.Wallet != null)
                 {
-                    OnStartConsensusCommand(null);
+                    OnStartConsensusCommand();
                 }
             }
 
@@ -1338,13 +1336,13 @@ namespace Bhp.Shell
             switch (args[1].ToLower())
             {
                 case "consensus":
-                    return OnStartConsensusCommand(args);
+                    return OnStartConsensusCommand();
                 default:
                     return base.OnCommand(args);
             }
         }
 
-        private bool OnStartConsensusCommand(string[] args)
+        private bool OnStartConsensusCommand()
         {
             if (NoWallet()) return true;
             ShowPrompt = false;
